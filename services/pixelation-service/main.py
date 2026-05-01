@@ -32,24 +32,30 @@ def generar_imagen_marcos(img: np.ndarray, faces: list) -> np.ndarray:
         score      = face.get("score", None)
 
         color    = (0, 0, 255) if es_menor else (0, 255, 0)
-        label    = "MENOR" if es_menor else "ADULTO"
-        etiqueta = f"{label} {score:.4f}" if score is not None else label
+        label    = "M" if es_menor else "A"
+        etiqueta = f"{label}:{score:.2f}" if score is not None else label
 
-        # Grosor del marco proporcional al tamaño de la cara
-        box_thickness = max(2, w // 80)
+        # Marco proporcional
+        box_thickness = max(1, w // 100)
         cv2.rectangle(resultado, (x, y), (x + w, y + h), color, box_thickness)
 
-        # Escala de texto proporcional al bbox, siempre legible
-        scale     = max(0.5, min(w / 120.0, 2.0))
-        thickness = max(1, int(scale))
-        (tw, th), baseline = cv2.getTextSize(etiqueta, font, scale, thickness)
-        band_h = th + baseline + 8
+        # Ajustar escala para que el texto quepa dentro del ancho del bbox
+        scale = 0.5
+        for s in [0.7, 0.6, 0.5, 0.4, 0.35, 0.3]:
+            (tw, _), _ = cv2.getTextSize(etiqueta, font, s, 1)
+            if tw <= w - 8:
+                scale = s
+                break
 
-        # Banda encima del box; si no cabe, dentro del borde superior
-        band_y = y - band_h if y >= band_h else y
-        cv2.rectangle(resultado, (x, band_y), (x + tw + 8, band_y + band_h), color, cv2.FILLED)
-        cv2.putText(resultado, etiqueta, (x + 4, band_y + th + 4),
-                    font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
+        (tw, th), baseline = cv2.getTextSize(etiqueta, font, scale, 1)
+        band_h = th + baseline + 6
+
+        # Banda en la parte INFERIOR INTERIOR del bbox (no sale fuera)
+        band_y = y + h - band_h
+        band_y = max(band_y, y)
+        cv2.rectangle(resultado, (x, band_y), (x + w, y + h), color, cv2.FILLED)
+        cv2.putText(resultado, etiqueta, (x + 4, band_y + th + 3),
+                    font, scale, (255, 255, 255), 1, cv2.LINE_AA)
 
     return resultado
 
