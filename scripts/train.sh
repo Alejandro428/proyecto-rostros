@@ -29,7 +29,9 @@ if [ ! -f "$MODEL_SRC" ]; then
 fi
 
 echo "===== [3/4] Copiando modelo a age-service ====="
-cp "$MODEL_SRC" "$MODEL_DST"
+WIN_SRC="$(echo "$MODEL_SRC" | sed 's|^/mnt/\([a-zA-Z]\)/|\1:/|; s|/|\\|g')"
+WIN_DST="$(echo "$MODEL_DST" | sed 's|^/mnt/\([a-zA-Z]\)/|\1:/|; s|/|\\|g')"
+powershell.exe -Command "Copy-Item '$WIN_SRC' '$WIN_DST' -Force"
 echo "Modelo copiado → $MODEL_DST"
 
 echo "===== [4/4] Reconstruyendo y reiniciando age-detection ====="

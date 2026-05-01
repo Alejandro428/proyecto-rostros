@@ -35,24 +35,21 @@ def generar_imagen_marcos(img: np.ndarray, faces: list) -> np.ndarray:
         label    = "Menor" if es_menor else "Adulto"
         etiqueta = f"{label}:{score:.3f}" if score is not None else label
 
-        # Marco fino
+        # Marco fino fijo
         cv2.rectangle(resultado, (x, y), (x + w, y + h), color, 1)
 
-        # Ajustar escala para que el texto quepa dentro del ancho del bbox
-        scale = 0.5
-        for s in [0.7, 0.6, 0.5, 0.4, 0.35, 0.3]:
-            (tw, _), _ = cv2.getTextSize(etiqueta, font, s, 1)
-            if tw <= w - 8:
-                scale = s
-                break
+        # Escala proporcional al bbox, acotada entre 0.2 y 0.5
+        scale = max(0.2, min(0.5, w / 200.0))
 
-        (tw, th), baseline = cv2.getTextSize(etiqueta, font, scale, 1)
-        band_h = th + baseline + 6
+        # Texto: 3 decimales; si no cabe en el ancho, reducir a 1 decimal (mínimo)
+        etiqueta_corta = f"{'Menor' if es_menor else 'Adulto'}:{score:.1f}" if score is not None else ('Menor' if es_menor else 'Adulto')
+        (tw, _), _ = cv2.getTextSize(etiqueta, font, scale, 1)
+        texto = etiqueta if tw <= w - 4 else etiqueta_corta
 
-        # Banda en la parte SUPERIOR INTERIOR del bbox
-        band_y = y
-        cv2.rectangle(resultado, (x, band_y), (x + w, band_y + band_h), color, cv2.FILLED)
-        cv2.putText(resultado, etiqueta, (x + 4, band_y + th + 3),
+        (tw, th), baseline = cv2.getTextSize(texto, font, scale, 1)
+        band_h = th + baseline + 4
+        cv2.rectangle(resultado, (x, y), (x + w, y + band_h), color, cv2.FILLED)
+        cv2.putText(resultado, texto, (x + 2, y + th + 2),
                     font, scale, (255, 255, 255), 1, cv2.LINE_AA)
 
     return resultado

@@ -2,7 +2,6 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Actualizamos las librerías para que sean compatibles con Debian Bookworm
 RUN apt-get update && apt-get install -y \
     build-essential \
     librdkafka-dev \
@@ -12,6 +11,9 @@ RUN apt-get update && apt-get install -y \
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Descargar modelo RetinaFace durante el build (evita descarga en runtime)
+RUN python -c "from insightface.app import FaceAnalysis; app = FaceAnalysis(name='buffalo_l', allowed_modules=['detection']); app.prepare(ctx_id=-1)"
 
 COPY . .
 
