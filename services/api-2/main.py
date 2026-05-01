@@ -23,25 +23,45 @@ async def get_resultado(guid: str):
     caras = db_service.get_caras(guid)
 
     imagenes = {
-        "original":  storage_service.presigned_url(BUCKET_RAW,       solicitud["url_original"],  PRESIGNED_EXPIRY),
-        "marcos":    storage_service.presigned_url(BUCKET_PROCESSED,  solicitud["url_marcos"],    PRESIGNED_EXPIRY),
-        "terminada": storage_service.presigned_url(BUCKET_PROCESSED,  solicitud["url_terminada"], PRESIGNED_EXPIRY),
+        "original":  storage_service.presigned_url(BUCKET_RAW,      solicitud["url_original"],  PRESIGNED_EXPIRY),
+        "marcos":    storage_service.presigned_url(BUCKET_PROCESSED, solicitud["url_marcos"],    PRESIGNED_EXPIRY),
+        "terminada": storage_service.presigned_url(BUCKET_PROCESSED, solicitud["url_terminada"], PRESIGNED_EXPIRY),
     }
 
     return {
         "guid":   guid,
         "estado": solicitud["estado"],
         "tiempos": {
-            "inicio_solicitud":      solicitud["inicio_solicitud"],
-            "fin_solicitud":         solicitud["fin_solicitud"],
+            "inicio_solicitud":       solicitud["inicio_solicitud"],
+            "fin_solicitud":          solicitud["fin_solicitud"],
             "inicio_deteccion_caras": solicitud["inicio_deteccion_caras"],
-            "fin_deteccion_caras":   solicitud["fin_deteccion_caras"],
-            "inicio_edad":           solicitud["inicio_edad"],
-            "fin_edad":              solicitud["fin_edad"],
-            "inicio_pixelado":       solicitud["inicio_pixelado"],
-            "fin_pixelado":          solicitud["fin_pixelado"],
+            "fin_deteccion_caras":    solicitud["fin_deteccion_caras"],
+            "inicio_edad":            solicitud["inicio_edad"],
+            "fin_edad":               solicitud["fin_edad"],
+            "inicio_pixelado":        solicitud["inicio_pixelado"],
+            "fin_pixelado":           solicitud["fin_pixelado"],
         },
         "imagenes": imagenes,
         "caras_detectadas": len(caras),
         "caras": caras,
+    }
+
+
+@app.get("/resultado/{guid}/cara/{id_cara}")
+async def get_cara(guid: str, id_cara: int):
+    solicitud = db_service.get_solicitud(guid)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+
+    cara = db_service.get_cara(guid, id_cara)
+    if not cara:
+        raise HTTPException(status_code=404, detail="Cara no encontrada")
+
+    return {
+        "guid":      guid,
+        "id_imagen": cara["id_imagen"],
+        "es_menor":  cara["es_menor"],
+        "score":     cara["score"],
+        "bbox":      cara["bbox"],
+        "imagen":    storage_service.presigned_url(BUCKET_RAW, cara["url_imagen"], PRESIGNED_EXPIRY),
     }

@@ -33,10 +33,15 @@ while True:
 
         logger.info(f"[ORCH-3] {guid} — {len(faces)} caras recibidas")
 
-        db_service.update_inicio_pixelado(guid)
-        producer_service.publish_cmd_pixelation(guid, id_imagen, s3_key, faces)
+        hay_menores = any(f.get("es_menor") for f in faces)
 
-        logger.info(f"[ORCH-3] {guid} → cmd.pixelation publicado")
+        if hay_menores:
+            db_service.update_inicio_pixelado(guid)
+            producer_service.publish_cmd_pixelation(guid, id_imagen, s3_key, faces)
+            logger.info(f"[ORCH-3] {guid} → hay menores → cmd.pixelation")
+        else:
+            producer_service.publish_cmd_storage(guid, id_imagen, s3_key, faces)
+            logger.info(f"[ORCH-3] {guid} → sin menores → cmd.storage")
 
     except Exception as e:
         logger.error(f"[ERROR ORCH-3] {e}")

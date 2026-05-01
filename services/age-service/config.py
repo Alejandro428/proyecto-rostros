@@ -30,4 +30,4 @@ IMG_SIZE_CV2 = (320, 256)
 
 # Threshold bajo para priorizar no perderse ningún menor:
 # falso positivo (adulto pixelado) es preferible a falso negativo (menor no pixelado)
-THRESHOLD = 0.35
+THRESHOLD = 0.40

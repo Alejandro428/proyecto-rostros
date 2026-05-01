@@ -69,8 +69,8 @@ while True:
             producer_service.publish_cmd_age_detection(guid, id_imagen, s3_key_original, faces_payload)
             logger.info(f"[ORCH-2] {len(faces_payload)} caras → cmd.age_detection — {guid}")
         else:
-            logger.info(f"[ORCH-2] Sin caras detectadas → cmd.storage — {guid}")
-            producer_service.publish_cmd_storage(guid, id_imagen, s3_key_original, faces_payload)
+            producer_service.publish_cmd_storage(guid, id_imagen, s3_key_original, [])
+            logger.info(f"[ORCH-2] Sin caras → cmd.storage — {guid}")
 
     except Exception as e:
         logger.error(f"[ERROR ORCH-2] {e}")

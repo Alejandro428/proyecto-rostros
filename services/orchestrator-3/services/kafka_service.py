@@ -44,5 +44,21 @@ class KafkaProducerService:
         )
         self.producer.flush(timeout=5)
 
+    def publish_cmd_storage(self, guid: str, id_imagen: int, s3_key: str, faces: list):
+        event = {
+            "version":        "1.0",
+            "timestamp":      datetime.utcnow().isoformat(),
+            "GUID_Solicitud": guid,
+            "Id_Imagen":      id_imagen,
+            "s3_key":         s3_key,
+            "faces":          faces
+        }
+        self.producer.produce(
+            "cmd.storage",
+            value=json.dumps(event).encode("utf-8"),
+            callback=self._delivery_report
+        )
+        self.producer.flush(timeout=5)
+
     def close(self):
         self.producer.flush(timeout=5)

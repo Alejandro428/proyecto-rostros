@@ -47,6 +47,29 @@ class DatabaseService:
             cur.close()
             conn.close()
 
+    def get_cara(self, guid: str, id_cara: int) -> dict | None:
+        conn = psycopg2.connect(**self.db_conf)
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                SELECT Id_Imagen, URL_Imagen, Mayor_18, Escore, Imagen_X, Imagen_Y, Imagen_Ancho, Imagen_Alto
+                FROM Imagenes
+                WHERE GUID_Solicitud = %s AND Id_Imagen = %s AND Imagen_X IS NOT NULL
+            """, (guid, id_cara))
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {
+                "id_imagen": row[0],
+                "url_imagen": row[1],
+                "es_menor":  not row[2] if row[2] is not None else None,
+                "score":     float(row[3]) if row[3] is not None else None,
+                "bbox":      {"x": row[4], "y": row[5], "w": row[6], "h": row[7]}
+            }
+        finally:
+            cur.close()
+            conn.close()
+
     def get_caras(self, guid: str) -> list:
         conn = psycopg2.connect(**self.db_conf)
         cur = conn.cursor()

@@ -35,6 +35,28 @@ class DatabaseService:
             cur.close()
             conn.close()
 
+    def update_fin_solo_marcos(self, guid: str, url_marcos: str):
+        conn = psycopg2.connect(**self.db_conf)
+        cur = conn.cursor()
+        try:
+            now = datetime.utcnow()
+            cur.execute("""
+                UPDATE Solicitud
+                SET Fin_Solicitud   = %s,
+                    URL_Imagen_Marcos = %s,
+                    Estado          = 'COMPLETADO'
+                WHERE GUID_Solicitud = %s
+            """, (now, url_marcos, guid))
+            conn.commit()
+            logger.info(f"BD: solicitud sin menores completada - GUID={guid}")
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"BD error update_fin_solo_marcos: {e}")
+            raise
+        finally:
+            cur.close()
+            conn.close()
+
     def update_fin_solicitud_sin_caras(self, guid: str):
         conn = psycopg2.connect(**self.db_conf)
         cur = conn.cursor()

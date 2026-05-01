@@ -89,18 +89,26 @@ while True:
 
         logger.info(f"[PIXELATION] {guid} — topic={topic} — {len(faces)} caras")
 
-        if topic == "cmd.storage":
-            # Sin caras detectadas — solo cerrar la solicitud
+        if topic == "cmd.storage" and not faces:
+            # Sin caras (viene de O2): cerrar sin imágenes
             db_service.update_fin_solicitud_sin_caras(guid)
             logger.info(f"[PIXELATION] {guid} → completado sin caras")
             continue
 
-        # cmd.pixelation — generar las dos imágenes de salida
-        img_original = storage_service.download_image(s3_key)
+        if topic == "cmd.storage" and faces:
+            # Sin menores (viene de O3): solo generar imagen de marcos
+            img_original = storage_service.download_image(s3_key)
+            img_marcos   = generar_imagen_marcos(img_original, faces)
+            key_marcos   = f"{guid}/marcos.jpg"
+            storage_service.upload_image(img_marcos, key_marcos)
+            db_service.update_fin_solo_marcos(guid, key_marcos)
+            logger.info(f"[PIXELATION] {guid} → completado sin menores — marcos={key_marcos}")
+            continue
 
+        # cmd.pixelation — hay menores: generar marcos + terminada
+        img_original  = storage_service.download_image(s3_key)
         img_marcos    = generar_imagen_marcos(img_original, faces)
         img_terminada = generar_imagen_terminada(img_original, faces)
-
         key_marcos    = f"{guid}/marcos.jpg"
         key_terminada = f"{guid}/terminada.jpg"
 
@@ -108,7 +116,6 @@ while True:
         storage_service.upload_image(img_terminada, key_terminada)
 
         db_service.update_fin_solicitud(guid, key_terminada, key_marcos)
-
         logger.info(f"[PIXELATION] {guid} → completado — marcos={key_marcos} terminada={key_terminada}")
 
     except Exception as e:
