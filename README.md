@@ -82,6 +82,8 @@ Todos los servicios deben estar en estado `running`. El contenedor `kafka-init` 
 
 ### 4. Probar el sistema
 
+**Formatos de imagen compatibles:** `jpg`, `jpeg`, `png`, `bmp`, `gif` — tamaño máximo **10 MB**
+
 **Subir una imagen:**
 ```bash
 curl -X POST http://localhost:8000/upload \
@@ -170,7 +172,7 @@ Punto de entrada del sistema. Fusiona el rol de Orquestador-1.
 - Devuelve el `GUID_Solicitud` al cliente
 
 **Endpoints:**
-- `POST /upload` — sube una imagen e inicia el pipeline
+- `POST /upload` — sube una imagen e inicia el pipeline. Formatos aceptados: `jpg`, `jpeg`, `png`, `bmp`, `gif`. Tamaño máximo: 10 MB.
 - `GET /health` — comprobación de salud
 
 ---
