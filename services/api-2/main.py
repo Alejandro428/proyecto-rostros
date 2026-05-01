@@ -1,5 +1,6 @@
 import logging
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from config import DB_CONF, MINIO_CONF, MINIO_PUBLIC_URL, BUCKET_RAW, BUCKET_PROCESSED, PRESIGNED_EXPIRY
 from services.db import DatabaseService
@@ -10,6 +11,12 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="API Resultados Rostros")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/health")
 async def health_check():

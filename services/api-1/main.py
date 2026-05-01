@@ -4,6 +4,7 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
 import boto3
 from confluent_kafka import Producer, KafkaError
@@ -28,6 +29,13 @@ async def lifespan(app: FastAPI):
     kafka_service.close()
 
 app = FastAPI(title="API-1", version="1.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/health")
 async def health_check():
