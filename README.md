@@ -48,7 +48,17 @@ PYTHONUNBUFFERED=1
 
 ## Cómo ejecutar el sistema
 
-### 1. Levantar todos los servicios
+### 1. Descargar el modelo y desplegar el servicio de detección de edad
+
+El modelo entrenado no está incluido en el repositorio por su tamaño (202 MB). Ejecuta este script una sola vez — descarga el modelo automáticamente de Google Drive y reconstruye el contenedor:
+
+```bash
+bash scripts/deploy_model.sh
+```
+
+> Si prefieres entrenar el modelo desde cero con tu propia GPU: `bash scripts/train.sh`
+
+### 2. Levantar todos los servicios
 
 ```bash
 docker compose up -d --build
