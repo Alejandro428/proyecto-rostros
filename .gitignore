@@ -29,3 +29,5 @@ Thumbs.db
 
 # Imágenes de prueba
 prueba.jpg
+training/modelo_menores_fase1.h5
+services/age-service/modelo_menores.h5

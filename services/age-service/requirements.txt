@@ -1,6 +1,6 @@
-tensorflow
-opencv-python-headless
-boto3
-confluent-kafka
-numpy
-psycopg2-binary
+tensorflow==2.15.0
+opencv-python-headless==4.10.0.84
+boto3==1.43.1
+confluent-kafka==2.14.0
+numpy==1.26.4
+psycopg2-binary==2.9.12

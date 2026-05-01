@@ -3,6 +3,7 @@ import json
 import logging
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras.applications.resnet50 import preprocess_input
 
 from config import (
     DB_CONF, MINIO_CONF, KAFKA_CONF_CONSUMER, KAFKA_CONF_PRODUCER,
@@ -15,7 +16,9 @@ from services.kafka_service import KafkaConsumerService, KafkaProducerService
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-model            = tf.keras.models.load_model(MODEL_PATH)
+
+model = tf.keras.models.load_model(MODEL_PATH)
+logger.info(f"Modelo cargado desde {MODEL_PATH}")
 db_service       = DatabaseService(DB_CONF)
 storage_service  = StorageService(MINIO_CONF, BUCKET_RAW)
 consumer_service = KafkaConsumerService(KAFKA_CONF_CONSUMER, TOPIC_CONSUME)
@@ -55,10 +58,10 @@ while True:
                 # Descargar crop de la cara
                 img = storage_service.download_image(s3_key_cara)
 
-                # Preprocesado: mismo que entrenamiento — resize (ancho=320, alto=256) + /255
-                img_resized  = cv2.resize(img, IMG_SIZE_CV2)
-                img_norm     = img_resized.astype("float32") / 255.0
-                img_input    = np.expand_dims(img_norm, axis=0)  # (1, 256, 320, 3)
+                # OpenCV carga en BGR; el modelo se entrenó con RGB → convertir antes de preprocesar
+                img_resized = cv2.resize(img, IMG_SIZE_CV2)
+                img_rgb     = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
+                img_input   = np.expand_dims(preprocess_input(img_rgb.astype("float32")), axis=0)
 
                 # Predicción — salida sigmoid: float en [0, 1]
                 # Clases ordenadas alfabéticamente: 0=mayor, 1=menor → score >= 0.5 = MENOR

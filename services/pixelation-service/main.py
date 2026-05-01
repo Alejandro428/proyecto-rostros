@@ -32,12 +32,11 @@ def generar_imagen_marcos(img: np.ndarray, faces: list) -> np.ndarray:
         score      = face.get("score", None)
 
         color    = (0, 0, 255) if es_menor else (0, 255, 0)
-        label    = "M" if es_menor else "A"
-        etiqueta = f"{label}:{score:.2f}" if score is not None else label
+        label    = "Menor" if es_menor else "Adulto"
+        etiqueta = f"{label}:{score:.3f}" if score is not None else label
 
-        # Marco proporcional
-        box_thickness = max(1, w // 100)
-        cv2.rectangle(resultado, (x, y), (x + w, y + h), color, box_thickness)
+        # Marco fino
+        cv2.rectangle(resultado, (x, y), (x + w, y + h), color, 1)
 
         # Ajustar escala para que el texto quepa dentro del ancho del bbox
         scale = 0.5
@@ -50,10 +49,9 @@ def generar_imagen_marcos(img: np.ndarray, faces: list) -> np.ndarray:
         (tw, th), baseline = cv2.getTextSize(etiqueta, font, scale, 1)
         band_h = th + baseline + 6
 
-        # Banda en la parte INFERIOR INTERIOR del bbox (no sale fuera)
-        band_y = y + h - band_h
-        band_y = max(band_y, y)
-        cv2.rectangle(resultado, (x, band_y), (x + w, y + h), color, cv2.FILLED)
+        # Banda en la parte SUPERIOR INTERIOR del bbox
+        band_y = y
+        cv2.rectangle(resultado, (x, band_y), (x + w, band_y + band_h), color, cv2.FILLED)
         cv2.putText(resultado, etiqueta, (x + 4, band_y + th + 3),
                     font, scale, (255, 255, 255), 1, cv2.LINE_AA)
 

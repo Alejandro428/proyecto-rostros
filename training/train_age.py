@@ -112,8 +112,12 @@ def augmentar(image, label):
 
 AUTOTUNE = tf.data.AUTOTUNE
 
-train_ds = train_ds.map(augmentar).prefetch(AUTOTUNE)
-val_ds   = val_ds.prefetch(AUTOTUNE)
+def preprocesar(image, label):
+    image = resnet_preprocess(tf.cast(image, tf.float32))
+    return image, label
+
+train_ds = train_ds.map(augmentar).map(preprocesar).prefetch(AUTOTUNE)
+val_ds   = val_ds.map(preprocesar).prefetch(AUTOTUNE)
 
 # =========================
 # 4. MODELO ResNet50
@@ -128,8 +132,7 @@ def build_model():
     base_model.trainable = False
 
     inputs  = layers.Input(shape=(IMG_SIZE[0], IMG_SIZE[1], 3))
-    x       = tf.keras.layers.Lambda(resnet_preprocess)(inputs)
-    x       = base_model(x, training=False)
+    x       = base_model(inputs, training=False)
     x       = layers.GlobalAveragePooling2D()(x)
     x       = layers.Dense(64, activation="relu")(x)
     x       = layers.Dropout(0.3)(x)
@@ -148,14 +151,16 @@ model.summary()
 def get_callbacks(path):
     return [
         EarlyStopping(
-            monitor="val_loss",
+            monitor="val_recall_menor",
+            mode="max",
             patience=5,
             restore_best_weights=True,
             verbose=1
         ),
         ModelCheckpoint(
             filepath=path,
-            monitor="val_accuracy",
+            monitor="val_recall_menor",
+            mode="max",
             save_best_only=True,
             verbose=1
         ),
@@ -172,10 +177,12 @@ def get_callbacks(path):
 # 6. FASE 1 — base congelada
 # =========================
 
+recall_menor = tf.keras.metrics.Recall(thresholds=THRESHOLD, name="recall_menor")
+
 model.compile(
     optimizer=tf.keras.optimizers.Adam(LR),
     loss="binary_crossentropy",
-    metrics=["accuracy"]
+    metrics=["accuracy", recall_menor]
 )
 
 path_fase1 = OUTPUT_PATH.replace(".h5", "_fase1.h5")
@@ -204,7 +211,7 @@ print(f"\nCapas entrenables en ResNet50: {sum(1 for l in base.layers if l.traina
 model.compile(
     optimizer=tf.keras.optimizers.Adam(LR / 10),
     loss="binary_crossentropy",
-    metrics=["accuracy"]
+    metrics=["accuracy", tf.keras.metrics.Recall(thresholds=THRESHOLD, name="recall_menor")]
 )
 
 print("===== FASE 2 — Fine-tuning últimas 30 capas =====\n")
@@ -220,9 +227,10 @@ model.fit(
 # 8. EVALUACIÓN FINAL
 # =========================
 
-loss, accuracy = model.evaluate(val_ds)
-print(f"\nLoss:     {loss:.4f}")
-print(f"Accuracy: {accuracy:.4f}")
+loss, accuracy, recall = model.evaluate(val_ds)
+print(f"\nLoss:         {loss:.4f}")
+print(f"Accuracy:     {accuracy:.4f}")
+print(f"Recall MENOR: {recall:.4f}")
 print(f"\nModelo guardado en: {OUTPUT_PATH}")
 print(f"Fase 1 guardada en: {path_fase1}")
 print(f"Clases: {class_names}  →  score >= {THRESHOLD} = MENOR (label 1)")

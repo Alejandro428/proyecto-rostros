@@ -1,5 +1,5 @@
-opencv-python-headless
-boto3
-confluent-kafka
-numpy
-psycopg2-binary
+opencv-python-headless==4.13.0.92
+boto3==1.43.1
+confluent-kafka==2.14.0
+numpy==2.4.4
+psycopg2-binary==2.9.12
