@@ -20,8 +20,15 @@ Sistema distribuido orientado a eventos para detectar rostros en imágenes, clas
 
 - Docker Desktop (con WSL2 en Windows)
 - Docker Compose v2
-- Git
+- Git + **Git LFS** (necesario para descargar el modelo al clonar)
 - Archivo `.env` en la raíz del proyecto (ver sección siguiente)
+
+### Instalar Git LFS
+
+```bash
+# Si no lo tienes instalado:
+git lfs install
+```
 
 ### Archivo `.env`
 
@@ -48,15 +55,16 @@ PYTHONUNBUFFERED=1
 
 ## Cómo ejecutar el sistema
 
-### 1. Descargar el modelo y desplegar el servicio de detección de edad
+### 1. Clonar el repositorio
 
-El modelo entrenado no está incluido en el repositorio por su tamaño (202 MB). Ejecuta este script una sola vez — descarga el modelo automáticamente de Google Drive y reconstruye el contenedor:
+El modelo de clasificación de edad (~95 MB) está gestionado con Git LFS y se descarga automáticamente al clonar:
 
 ```bash
-bash scripts/deploy_model.sh
+git clone https://github.com/Alejandro428/proyecto-rostros.git
+cd proyecto-rostros
 ```
 
-> Si prefieres entrenar el modelo desde cero con tu propia GPU: `bash scripts/train.sh`
+> Si ya tienes el repositorio clonado sin LFS: `git lfs pull`
 
 ### 2. Levantar todos los servicios
 
@@ -64,7 +72,7 @@ bash scripts/deploy_model.sh
 docker compose up -d --build
 ```
 
-### 2. Verificar que todos los contenedores están en marcha
+### 3. Verificar que todos los contenedores están en marcha
 
 ```bash
 docker compose ps
@@ -72,7 +80,7 @@ docker compose ps
 
 Todos los servicios deben estar en estado `running`. El contenedor `kafka-init` aparecerá como `exited (0)` — es correcto, su trabajo es crear los topics al arrancar y terminar.
 
-### 3. Probar el sistema
+### 4. Probar el sistema
 
 **Subir una imagen:**
 ```bash
@@ -95,7 +103,7 @@ curl http://localhost:8001/resultado/abc-123
 curl http://localhost:8001/resultado/abc-123/cara/2
 ```
 
-### 4. Detener el sistema
+### 5. Detener el sistema
 
 ```bash
 docker compose down
@@ -106,18 +114,14 @@ Para eliminar también los volúmenes (BD, MinIO, Kafka):
 docker compose down -v
 ```
 
-### 5. Entrenamiento del modelo (opcional)
+### 6. Entrenamiento del modelo (opcional)
 
 Si quieres re-entrenar la red neuronal con tu GPU local:
 ```bash
 bash scripts/train.sh
 ```
 
-Si has entrenado en Google Colab y tienes el `.h5` descargado:
-```bash
-# Copia el modelo a training/modelo_menores.h5 y ejecuta:
-bash scripts/deploy_model.sh
-```
+El script entrena el modelo, lo copia a `age-service` y reinicia el contenedor automáticamente.
 
 ---
 
@@ -128,11 +132,11 @@ proyecto_rostros/
 ├── docker-compose.yml
 ├── .env
 ├── scripts/
-│   ├── train.sh              # Entrenamiento local con GPU (RTX 3080)
-│   └── deploy_model.sh       # Despliegue de modelo entrenado en Colab
+│   ├── train.sh              # Entrenamiento local con GPU
+│   └── deploy_model.sh       # Despliegue de un modelo externo (.h5)
 ├── training/
 │   ├── Dockerfile
-│   ├── train_age.py          # Script de entrenamiento local
+│   ├── train_age.py          # Script de entrenamiento
 │   └── red_neuronal_proyecto_imagenes.ipynb  # Notebook para Google Colab
 ├── infra/
 │   └── postgres/
@@ -142,7 +146,7 @@ proyecto_rostros/
 │   └── eventos/              # Schemas JSON de eventos Kafka
 └── services/
     ├── api-1/                # Ingesta de imágenes (fusiona Orquestador-1)
-    ├── detection-service/    # Detección de rostros con OpenCV
+    ├── detection-service/    # Detección de rostros con RetinaFace
     ├── orchestrator-2/       # Orquestación post-detección
     ├── age-service/          # Clasificación de edad con red neuronal
     ├── orchestrator-3/       # Orquestación post-clasificación
@@ -173,16 +177,16 @@ Punto de entrada del sistema. Fusiona el rol de Orquestador-1.
 
 ### Detection Service — Detección de rostros
 
-Detecta los rostros presentes en la imagen mediante el clasificador Haar Cascade de OpenCV.
+Detecta los rostros presentes en la imagen mediante RetinaFace (insightface).
 
 **Responsabilidades:**
 - Consume `cmd.face_detection`
 - Descarga la imagen de MinIO
-- Ejecuta la detección con `haarcascade_frontalface_default.xml`
+- Ejecuta la detección con el modelo `buffalo_l` de insightface
 - Registra en BD el timestamp de fin de detección
 - Publica `evt.face_detection.completed` con la lista de bounding boxes
 
-**Parámetros de detección:** `scaleFactor=1.15`, `minNeighbors=5`, `minSize=(50,50)`
+**Configuración:** `model_selection=buffalo_l`, `det_size=(640, 640)`, CPU inference
 
 ---
 
@@ -209,7 +213,7 @@ Clasifica si cada cara corresponde a un menor mediante una CNN entrenada.
 - Actualiza `Mayor_18` y `Escore` en BD por cada cara
 - Publica `evt.age_detection.completed` con `score` y `es_menor` por cara
 
-**Modelo:** CNN personalizada entrenada con el dataset `face_age`. Entrada `256×320×3`, salida sigmoid `[0,1]`.
+**Modelo:** ResNet50 con fine-tuning entrenado sobre el dataset `face_age`. Entrada `256×320×3`, salida sigmoid `[0,1]`. Distribuido vía Git LFS (~95 MB).
 
 ---
 
@@ -290,7 +294,7 @@ Sirve los resultados procesados mediante presigned URLs de MinIO (válidas 1 hor
                                ▼
                      ┌──────────────────┐
                      │Detection Service │
-                     │  (Haar Cascade)  │
+                     │  (RetinaFace)    │
                      └────────┬─────────┘
                               │ evt.face_detection.completed
                               ▼
@@ -302,7 +306,7 @@ Sirve los resultados procesados mediante presigned URLs de MinIO (válidas 1 hor
                               ▼                                             │
                      ┌──────────────────┐                                   │
                      │  Age Service     │                                   │
-                     │  (CNN ≥ 0.40)    │                                   │
+                     │  (ResNet50≥0.40) │                                   │
                      └────────┬─────────┘                                   │
                               │ evt.age_detection.completed                 │
                               ▼                                             │
