@@ -1,9 +1,11 @@
 import os
 import shutil
 import uuid
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, Model
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from sklearn.utils.class_weight import compute_class_weight
 
 # =========================
 # CONFIGURACIÓN
@@ -52,6 +54,16 @@ if not os.path.exists(DST_PATH):
     clasificar_dataset(SRC_PATH, DST_PATH)
 else:
     print("Dataset ya clasificado, usando el existente")
+
+n_menores = len(os.listdir(os.path.join(DST_PATH, "menor")))
+n_mayores = len(os.listdir(os.path.join(DST_PATH, "mayor")))
+print(f"Distribución — mayores: {n_mayores} | menores: {n_menores}")
+
+# Clases alfabéticas: mayor=0, menor=1
+labels = np.array([0] * n_mayores + [1] * n_menores)
+weights = compute_class_weight(class_weight="balanced", classes=np.array([0, 1]), y=labels)
+class_weight = dict(enumerate(weights))
+print(f"class_weight: {class_weight}")
 
 # =========================
 # 2. CARGAR DATOS
@@ -175,12 +187,14 @@ callbacks = [
     )
 ]
 
+print(f"class_weight: {class_weight}")
 print("===== ENTRENANDO =====\n")
 history = model.fit(
     train_ds,
     validation_data=val_ds,
     epochs=EPOCHS,
-    callbacks=callbacks
+    callbacks=callbacks,
+    class_weight=class_weight,
 )
 
 # =========================

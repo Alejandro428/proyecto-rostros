@@ -25,7 +25,6 @@ logger.info("--- [PIXELATION SERVICE] INICIADO ---")
 def generar_imagen_marcos(img: np.ndarray, faces: list) -> np.ndarray:
     resultado = img.copy()
     font      = cv2.FONT_HERSHEY_SIMPLEX
-    thickness = 1
 
     for face in faces:
         x, y, w, h = face["bbox"]["x"], face["bbox"]["y"], face["bbox"]["w"], face["bbox"]["h"]
@@ -33,24 +32,23 @@ def generar_imagen_marcos(img: np.ndarray, faces: list) -> np.ndarray:
         score      = face.get("score", None)
 
         color    = (0, 0, 255) if es_menor else (0, 255, 0)
-        label    = "MENOR" if es_menor else "MAYOR"
-        # Incluye "% menor" para que el número tenga contexto
-        etiqueta = f"{label}  {score:.2f} menor" if score is not None else label
+        label    = "MENOR" if es_menor else "ADULTO"
+        etiqueta = f"{label} {score:.4f}" if score is not None else label
 
-        # Marco exterior fino
-        cv2.rectangle(resultado, (x, y), (x + w, y + h), color, 1)
+        # Grosor del marco proporcional al tamaño de la cara
+        box_thickness = max(2, w // 80)
+        cv2.rectangle(resultado, (x, y), (x + w, y + h), color, box_thickness)
 
-        # Ajustar escala de texto para que quepa dentro del ancho del bbox
-        scale      = 0.38
-        max_width  = w - 8
+        # Escala de texto proporcional al bbox, siempre legible
+        scale     = max(0.5, min(w / 120.0, 2.0))
+        thickness = max(1, int(scale))
         (tw, th), baseline = cv2.getTextSize(etiqueta, font, scale, thickness)
-        while tw > max_width and scale > 0.18:
-            scale -= 0.02
-            (tw, th), baseline = cv2.getTextSize(etiqueta, font, scale, thickness)
+        band_h = th + baseline + 8
 
-        band_h = th + baseline + 6
-        cv2.rectangle(resultado, (x + 1, y + 1), (x + w - 1, y + band_h), color, cv2.FILLED)
-        cv2.putText(resultado, etiqueta, (x + 4, y + th + 3),
+        # Banda encima del box; si no cabe, dentro del borde superior
+        band_y = y - band_h if y >= band_h else y
+        cv2.rectangle(resultado, (x, band_y), (x + tw + 8, band_y + band_h), color, cv2.FILLED)
+        cv2.putText(resultado, etiqueta, (x + 4, band_y + th + 4),
                     font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
     return resultado

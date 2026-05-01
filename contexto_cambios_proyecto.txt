@@ -1,9 +1,0 @@
-Después de leer el enunciado del proyecto, quiero que tengas en cuenta ciertos cambios que han habido respecto a la presentación que va a tener que tener:
-    Api 1 y Orquestador 1 van juntos, es decir, api 1 se encarga de hacer la tarea de los 2
-    Ocurre lo mismo con pixelation y Orquestador 4
-    Esto es simplemente aclaración, en solicitud, voy a necesitar al final tener tanto la imagen original, la imagen con marcos (los marcos son para remarcar que en esa zona se ha detectado la imagen) y el resultado 
-    de la red neuronal, para saber que valor ha salido para decidir que esa imagen se ha detectado que es de un menor o no.
-
-    Aclaración de como funciona el flujo: API1 -> Detección de caras -> Orquestador 2 -> Detección de edad -> Orquestador 3 -> Pixelar -> Y después ya consumir API 2 para obtener todo lo realizado
-    Se va a tener que revisar cada uno de los servicios uno a uno, ya que no me fio de ninguno realmente, hay que ir uno a uno viendo que funcionan adecuadamente.
-    Por supuesto, habrá que analizar también que el docker compose esta bien montado y hace lo que debe.
