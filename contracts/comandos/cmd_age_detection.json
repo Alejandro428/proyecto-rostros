@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "cmd.age_detection",
+  "type": "object",
+  "required": ["version", "timestamp", "GUID_Solicitud", "Id_Imagen", "s3_key", "faces"],
+  "properties": {
+    "version": { "type": "string" },
+
+    "timestamp": { "type": "string", "format": "date-time" },
+
+    "GUID_Solicitud": { "type": "string", "format": "uuid" },
+
+    "Id_Imagen": { "type": "integer" },
+
+    "s3_key": { "type": "string" },
+
+    "faces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["face_id", "s3_key_cara", "bbox"],
+        "properties": {
+          "face_id": { "type": "integer" },
+
+          "s3_key_cara": { "type": "string" },
+
+          "bbox": {
+            "type": "object",
+            "required": ["x", "y", "w", "h"],
+            "properties": {
+              "x": { "type": "integer" },
+              "y": { "type": "integer" },
+              "w": { "type": "integer" },
+              "h": { "type": "integer" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,48 @@
+import json
+from datetime import datetime
+from confluent_kafka import Consumer, Producer
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class KafkaConsumerService:
+    def __init__(self, conf: dict, topic: str):
+        self.consumer = Consumer(conf)
+        self.consumer.subscribe([topic])
+
+    def poll(self, timeout: float = 1.0):
+        return self.consumer.poll(timeout)
+
+    def close(self):
+        self.consumer.close()
+
+
+class KafkaProducerService:
+    def __init__(self, conf: dict):
+        self.producer = Producer(conf)
+
+    def _delivery_report(self, err, msg):
+        if err:
+            logger.error(f"Kafka error: {err}")
+        else:
+            logger.debug(f"Kafka: evento enviado a {msg.topic()}")
+
+    def publish_age_detection_completed(self, guid: str, id_imagen: int, s3_key: str, faces: list):
+        event = {
+            "version":        "1.0",
+            "timestamp":      datetime.utcnow().isoformat(),
+            "GUID_Solicitud": guid,
+            "Id_Imagen":      id_imagen,
+            "s3_key":         s3_key,
+            "faces":          faces
+        }
+        self.producer.produce(
+            "evt.age_detection.completed",
+            value=json.dumps(event).encode("utf-8"),
+            callback=self._delivery_report
+        )
+        self.producer.flush(timeout=5)
+
+    def close(self):
+        self.producer.flush(timeout=5)

@@ -1,0 +1,31 @@
+# Credenciales
+.env
+
+# Dataset de entrenamiento (demasiado grande para git)
+face_age/
+
+# Artefactos de entrenamiento (generados automáticamente)
+training/dataset_clasificado/
+training/modelo_menores.h5
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
+
+# Imágenes de prueba
+prueba.jpg

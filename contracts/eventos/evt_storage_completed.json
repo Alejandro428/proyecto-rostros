@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "evt.storage.completed",
+  "type": "object",
+  "required": ["version", "timestamp", "GUID_Solicitud", "Id_Imagen", "estado"],
+  "properties": {
+    "version": { "type": "string" },
+
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+
+    "GUID_Solicitud": { "type": "string", "format": "uuid" },
+
+    "Id_Imagen": { "type": "integer" },
+
+    "estado": {
+      "type": "string",
+      "enum": ["COMPLETADA"]
+    },
+
+    "num_imagenes_total": { "type": "integer" },
+
+    "num_imagenes_pixeladas": { "type": "integer" }
+  },
+  "additionalProperties": false
+}

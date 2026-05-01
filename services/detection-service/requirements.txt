@@ -1,0 +1,5 @@
+opencv-python-headless
+boto3
+confluent-kafka
+numpy
+psycopg2-binary
