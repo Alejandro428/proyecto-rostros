@@ -1,373 +1,408 @@
-# Sistema de Detección y Pixelado de Rostros
+# Sistema de Detección y Pixelado de Rostros de Menores
 
-Sistema distribuido basado en eventos (Event-Driven Architecture) que procesa imágenes para detectar rostros, clasificar la edad de cada uno y pixelar automáticamente los rostros de menores de 18 años.
+Sistema distribuido orientado a eventos para detectar rostros en imágenes, clasificar si corresponden a menores de edad mediante una red neuronal convolucional, y pixelar automáticamente las caras de menores.
 
 ---
 
-## Arquitectura general
+## Índice
 
-```
-Cliente
-  │
-  ▼
-[API-1] ────────────────────────────────────────────── Puerto 8000
-  │  Recibe imagen (multipart/form-data)
-  │  Sube original a MinIO (images-raw)
-  │  Registra solicitud en PostgreSQL
-  │  Publica cmd.face_detection
-  │
-  ▼ Kafka: cmd.face_detection
-[Detection Service]
-  │  Descarga imagen de MinIO
-  │  Detecta rostros con OpenCV Haar Cascade
-  │  Registra Fin_Deteccion_Caras en BD
-  │  Publica evt.face_detection.completed
-  │
-  ▼ Kafka: evt.face_detection.completed
-[Orchestrator-2]
-  │  Cropea cada cara de la imagen original
-  │  Sube cada crop a MinIO (images-raw)
-  │  Registra Inicio_Edad en BD
-  │  Publica cmd.age_detection  (con s3_key_cara por cara)
-  │
-  ▼ Kafka: cmd.age_detection
-[Age Service]
-  │  Descarga cada crop de MinIO
-  │  Clasifica menor/mayor con modelo TF (threshold 0.35)
-  │  Registra clasificación en Imagenes + Fin_edad en BD
-  │  Publica evt.age_detection.completed  (es_menor + score por cara)
-  │
-  ▼ Kafka: evt.age_detection.completed
-[Orchestrator-3]
-  │  Registra Inicio_Pixelado en BD
-  │  Publica cmd.pixelation
-  │
-  ▼ Kafka: cmd.pixelation  (o cmd.storage si 0 caras detectadas)
-[Pixelation Service]
-  │  Descarga imagen original de MinIO
-  │  Genera imagen_marcos: bbox + score sobre cada cara (rojo=menor, verde=mayor)
-  │  Genera imagen_terminada: caras de menores pixeladas
-  │  Sube ambas imágenes a MinIO (images-processed)
-  │  Registra URLs + Fin_Solicitud + Estado=COMPLETADO en BD
-  │
-  ▼
-[API-2] ────────────────────────────────────────────── Puerto 8001
-     Consulta estado y resultados desde PostgreSQL
-     Devuelve presigned URLs de las tres imágenes (original, marcos, terminada)
+1. [Requisitos previos](#requisitos-previos)
+2. [Cómo ejecutar el sistema](#cómo-ejecutar-el-sistema)
+3. [Estructura del proyecto](#estructura-del-proyecto)
+4. [Descripción de cada servicio](#descripción-de-cada-servicio)
+5. [Topics y flujo de eventos](#topics-y-flujo-de-eventos)
+6. [Documentación funcional](#documentación-funcional)
+7. [Gestión de errores](#gestión-de-errores)
+
+---
+
+## Requisitos previos
+
+- Docker Desktop (con WSL2 en Windows)
+- Docker Compose v2
+- Git
+- Archivo `.env` en la raíz del proyecto (ver sección siguiente)
+
+### Archivo `.env`
+
+Crea un fichero `.env` en la raíz con las siguientes variables:
+
+```env
+KAFKA_SERVER=kafka:9092
+
+MINIO_ENDPOINT=http://minio:9000
+MINIO_PUBLIC_URL=http://localhost:9000
+MINIO_USER=minioadmin
+MINIO_PASSWORD=minioadmin
+
+DB_HOST=db
+DB_NAME=db_rostros
+DB_USER=postgres
+DB_PASSWORD=postgres
+
+MAX_FILE_SIZE=10485760
+PYTHONUNBUFFERED=1
 ```
 
-**Nota arquitectónica:** O1 está fusionado en API-1. O4 está fusionado en Pixelation Service. Si no se detectan caras, Orchestrator-2 publica directamente en `cmd.storage` (sin pasar por age ni O3), y Pixelation cierra la solicitud.
+---
+
+## Cómo ejecutar el sistema
+
+### 1. Levantar todos los servicios
+
+```bash
+docker compose up -d --build
+```
+
+### 2. Verificar que todos los contenedores están en marcha
+
+```bash
+docker compose ps
+```
+
+Todos los servicios deben estar en estado `running`. El contenedor `kafka-init` aparecerá como `exited (0)` — es correcto, su trabajo es crear los topics al arrancar y terminar.
+
+### 3. Probar el sistema
+
+**Subir una imagen:**
+```bash
+curl -X POST http://localhost:8000/upload \
+  -F "file=@/ruta/a/imagen.jpg"
+```
+
+La respuesta incluye el `GUID_Solicitud`:
+```json
+{"GUID_Solicitud": "abc-123", "Id_Imagen": 1, "status": "INICIADO"}
+```
+
+**Consultar el resultado completo** (esperar unos segundos):
+```bash
+curl http://localhost:8001/resultado/abc-123
+```
+
+**Consultar una cara concreta:**
+```bash
+curl http://localhost:8001/resultado/abc-123/cara/2
+```
+
+### 4. Detener el sistema
+
+```bash
+docker compose down
+```
+
+Para eliminar también los volúmenes (BD, MinIO, Kafka):
+```bash
+docker compose down -v
+```
+
+### 5. Entrenamiento del modelo (opcional)
+
+Si quieres re-entrenar la red neuronal con tu GPU local:
+```bash
+bash scripts/train.sh
+```
+
+Si has entrenado en Google Colab y tienes el `.h5` descargado:
+```bash
+# Copia el modelo a training/modelo_menores.h5 y ejecuta:
+bash scripts/deploy_model.sh
+```
 
 ---
 
-## Tópicos Kafka
+## Estructura del proyecto
 
-| Tópico                         | Productor         | Consumidor          |
-|--------------------------------|-------------------|---------------------|
-| `cmd.face_detection`           | API-1             | Detection Service   |
-| `evt.face_detection.completed` | Detection Service | Orchestrator-2      |
-| `cmd.age_detection`            | Orchestrator-2    | Age Service         |
-| `evt.age_detection.completed`  | Age Service       | Orchestrator-3      |
-| `cmd.pixelation`               | Orchestrator-3    | Pixelation Service  |
-| `cmd.storage`                  | Orchestrator-2    | Pixelation Service  |
-
-Todos los `cmd.*` incluyen: `version`, `timestamp` (ISO 8601), `GUID_Solicitud`, `Id_Imagen`, `s3_key`.
+```
+proyecto_rostros/
+├── docker-compose.yml
+├── .env
+├── scripts/
+│   ├── train.sh              # Entrenamiento local con GPU (RTX 3080)
+│   └── deploy_model.sh       # Despliegue de modelo entrenado en Colab
+├── training/
+│   ├── Dockerfile
+│   ├── train_age.py          # Script de entrenamiento local
+│   └── red_neuronal_proyecto_imagenes.ipynb  # Notebook para Google Colab
+├── infra/
+│   └── postgres/
+│       └── init.sql          # Schema de la base de datos
+├── contracts/
+│   ├── comandos/             # Schemas JSON de comandos Kafka
+│   └── eventos/              # Schemas JSON de eventos Kafka
+└── services/
+    ├── api-1/                # Ingesta de imágenes (fusiona Orquestador-1)
+    ├── detection-service/    # Detección de rostros con OpenCV
+    ├── orchestrator-2/       # Orquestación post-detección
+    ├── age-service/          # Clasificación de edad con red neuronal
+    ├── orchestrator-3/       # Orquestación post-clasificación
+    ├── pixelation-service/   # Pixelado y generación de imágenes (fusiona Orquestador-4)
+    └── api-2/                # Consulta de resultados
+```
 
 ---
 
-## Servicios
+## Descripción de cada servicio
 
-### API-1 (Puerto 8000)
+### API-1 — Ingesta (puerto 8000)
+
+Punto de entrada del sistema. Fusiona el rol de Orquestador-1.
+
+**Responsabilidades:**
+- Valida el fichero recibido (extensión y tamaño máximo)
+- Sube la imagen original al bucket `images-raw` de MinIO
+- Registra la solicitud en PostgreSQL con estado `INICIADO`
+- Publica `images.raw` y `cmd.face_detection` en Kafka
+- Devuelve el `GUID_Solicitud` al cliente
 
 **Endpoints:**
-- `POST /upload` — recibe imagen, inicia el pipeline
-- `GET /health` — estado del servicio
+- `POST /upload` — sube una imagen e inicia el pipeline
+- `GET /health` — comprobación de salud
+
+---
+
+### Detection Service — Detección de rostros
+
+Detecta los rostros presentes en la imagen mediante el clasificador Haar Cascade de OpenCV.
 
 **Responsabilidades:**
-- Valida imagen (extensión, tamaño máximo 50 MB)
-- Sube imagen original a MinIO (`images-raw`)
-- Inserta fila en `Solicitud` e `Imagenes` en PostgreSQL
-- Registra `Inicio_Solicitud` e `Inicio_Deteccion_Caras` en BD
-- Publica `cmd.face_detection`
+- Consume `cmd.face_detection`
+- Descarga la imagen de MinIO
+- Ejecuta la detección con `haarcascade_frontalface_default.xml`
+- Registra en BD el timestamp de fin de detección
+- Publica `evt.face_detection.completed` con la lista de bounding boxes
 
-**Stack:** FastAPI · boto3 · confluent-kafka · psycopg2
+**Parámetros de detección:** `scaleFactor=1.15`, `minNeighbors=5`, `minSize=(50,50)`
 
 ---
 
-### Detection Service
+### Orchestrator-2 — Orquestación post-detección
 
-**Consume:** `cmd.face_detection`  
-**Produce:** `evt.face_detection.completed`
+Procesa el resultado de la detección y decide el siguiente paso.
 
 **Responsabilidades:**
-- Descarga imagen original de MinIO
-- Detecta rostros con OpenCV Haar Cascade (`haarcascade_frontalface_default.xml`)
-- Genera lista de faces con `face_id` y bbox `{x, y, w, h}`
-- Registra `Fin_Deteccion_Caras` en BD
-
-**Stack:** OpenCV · boto3 · confluent-kafka · psycopg2
+- Consume `evt.face_detection.completed`
+- Para cada cara detectada: recorta el crop, lo sube a MinIO e inserta una fila en `Imagenes`
+- **Si hay caras:** publica `cmd.age_detection` con los crops
+- **Si no hay caras:** publica `cmd.storage` para cerrar el flujo
 
 ---
 
-### Orchestrator-2
+### Age Service — Clasificación de edad
 
-**Consume:** `evt.face_detection.completed`  
-**Produce:** `cmd.age_detection` | `cmd.storage` (si 0 caras)
+Clasifica si cada cara corresponde a un menor mediante una CNN entrenada.
 
 **Responsabilidades:**
-- Cropea cada cara de la imagen original
-- Sube cada crop a MinIO (`images-raw/{guid}/faces/{id_cara}.jpg`)
-- Inserta fila en `Imagenes` por cara detectada (obtiene `Id_Imagen` del SERIAL)
-- Registra `Inicio_Edad` en BD
-- Si hay caras → publica `cmd.age_detection`
-- Si no hay caras → publica `cmd.storage`
+- Consume `cmd.age_detection`
+- Descarga cada crop de MinIO
+- Aplica el modelo `modelo_menores.h5` con umbral `score >= 0.40 → MENOR`
+- Actualiza `Mayor_18` y `Escore` en BD por cada cara
+- Publica `evt.age_detection.completed` con `score` y `es_menor` por cara
 
-**Stack:** OpenCV · boto3 · confluent-kafka · psycopg2
+**Modelo:** CNN personalizada entrenada con el dataset `face_age`. Entrada `256×320×3`, salida sigmoid `[0,1]`.
 
 ---
 
-### Age Service
+### Orchestrator-3 — Orquestación post-clasificación
 
-**Consume:** `cmd.age_detection`  
-**Produce:** `evt.age_detection.completed`
+Evalúa si existen menores y decide si es necesario pixelar.
 
 **Responsabilidades:**
-- Descarga cada crop de cara de MinIO
-- Preprocesa: resize a (224, 224), normaliza `/255.0`
-- Clasifica con modelo TensorFlow (`modelo_menores.h5`)
-- Threshold: **0.35** — se prioriza no perderse ningún menor (falso positivo preferible a falso negativo)
-- Actualiza `Mayor_18` y `Escore` en `Imagenes`
-- Registra `Fin_edad` en BD
-- Publica resultado con `es_menor`, `score` y `bbox` por cara
-
-**Nota modelo:** El modelo actual es el desplegado en `age-service/modelo_menores.h5`. Para sustituirlo por el CNN básica entrenado con `ia_training/train_age.py`, copiar el `.h5` generado y actualizar `IMG_SIZE_CV2 = (320, 256)` en `age-service/config.py`.
-
-**Stack:** TensorFlow · OpenCV · boto3 · confluent-kafka · psycopg2
+- Consume `evt.age_detection.completed`
+- **Si hay menores:** actualiza `Inicio_Pixelado` en BD y publica `cmd.pixelation`
+- **Si no hay menores:** publica `cmd.storage` (no se pixela nada)
 
 ---
 
-### Orchestrator-3
+### Pixelation Service — Pixelado y cierre (fusiona Orquestador-4)
 
-**Consume:** `evt.age_detection.completed`  
-**Produce:** `cmd.pixelation`
+Genera las imágenes de salida y cierra el flujo. Fusiona el rol de Orquestador-4.
 
 **Responsabilidades:**
-- Registra `Inicio_Pixelado` en BD
-- Publica `cmd.pixelation` con la lista de caras clasificadas
+- Consume `cmd.pixelation` y `cmd.storage`
+- Crea automáticamente el bucket `images-processed` si no existe
 
-**Stack:** confluent-kafka · psycopg2
+**Caso `cmd.pixelation` (hay menores):**
+- Genera imagen con marcos: rectángulo rojo (MENOR) o verde (ADULTO) con score
+- Genera imagen terminada: caras de menores pixeladas (reducción a 12×12 y escalado)
+- Sube ambas imágenes a `images-processed`
+- Cierra la solicitud con `Estado = COMPLETADO`
 
----
+**Caso `cmd.storage` con caras (no hay menores):**
+- Genera solo la imagen con marcos (todos marcados como ADULTO en verde)
+- Cierra la solicitud con `Estado = COMPLETADO`
 
-### Pixelation Service
+**Caso `cmd.storage` sin caras:**
+- Cierra la solicitud con `Estado = COMPLETADO` sin generar imágenes
 
-**Consume:** `cmd.pixelation` | `cmd.storage`  
-**Produce:** —
-
-**Responsabilidades (cmd.pixelation):**
-- Descarga imagen original de MinIO (`images-raw`)
-- Genera `marcos.jpg`: bbox dibujado sobre cada cara, con etiqueta MENOR/MAYOR y score (rojo = menor, verde = mayor)
-- Genera `terminada.jpg`: caras de menores pixeladas (reducción a 12×12 px y ampliación)
-- Sube ambas imágenes a MinIO (`images-processed`)
-- Registra `URL_Imagen_Marcos`, `URL_Imagen_Terminada`, `Fin_Pixelado`, `Fin_Solicitud`, `Estado = COMPLETADO`
-
-**Responsabilidades (cmd.storage):**
-- Sin caras detectadas → cierra la solicitud directamente (`Estado = COMPLETADO`)
-
-**Stack:** OpenCV · boto3 · confluent-kafka · psycopg2
+En todos los casos publica `evt.pixelation.completed`.
 
 ---
 
-### API-2 (Puerto 8001)
+### API-2 — Consulta de resultados (puerto 8001)
+
+Sirve los resultados procesados mediante presigned URLs de MinIO (válidas 1 hora).
 
 **Endpoints:**
-- `GET /resultado/{guid}` — estado, tiempos de pipeline y presigned URLs de las imágenes
+- `GET /resultado/{guid}` — solicitud completa: estado, tiempos, imagen original, imagen con marcos, imagen terminada, y lista de caras con su clasificación y bounding box
+- `GET /resultado/{guid}/cara/{id_cara}` — cara individual: crop de la cara, `es_menor`, `score` y bounding box
+- `GET /health` — comprobación de salud
 
-**Respuesta:**
+---
+
+## Topics y flujo de eventos
+
+### Topics Kafka
+
+| Topic | Tipo | Productor | Consumidor |
+|---|---|---|---|
+| `images.raw` | Evento | API-1 | — (auditoría) |
+| `cmd.face_detection` | Comando | API-1 | Detection Service |
+| `evt.face_detection.completed` | Evento | Detection Service | Orchestrator-2 |
+| `cmd.age_detection` | Comando | Orchestrator-2 | Age Service |
+| `evt.age_detection.completed` | Evento | Age Service | Orchestrator-3 |
+| `cmd.pixelation` | Comando | Orchestrator-3 | Pixelation Service |
+| `cmd.storage` | Comando | Orchestrator-2 / Orchestrator-3 | Pixelation Service |
+| `evt.pixelation.completed` | Evento | Pixelation Service | — (cierre de flujo) |
+
+---
+
+## Documentación funcional
+
+### Diagrama de arquitectura
+
+```
+                        ┌─────────────┐
+     Cliente ──────────►│    API-1    │
+                        │  (8000)     │
+                        └──────┬──────┘
+                               │ cmd.face_detection
+                               ▼
+                     ┌──────────────────┐
+                     │Detection Service │
+                     │  (Haar Cascade)  │
+                     └────────┬─────────┘
+                              │ evt.face_detection.completed
+                              ▼
+                     ┌──────────────────┐
+                     │ Orchestrator-2   │──── sin caras ────► cmd.storage ──┐
+                     │  (cropea caras)  │                                   │
+                     └────────┬─────────┘                                   │
+                              │ cmd.age_detection                           │
+                              ▼                                             │
+                     ┌──────────────────┐                                   │
+                     │  Age Service     │                                   │
+                     │  (CNN ≥ 0.40)    │                                   │
+                     └────────┬─────────┘                                   │
+                              │ evt.age_detection.completed                 │
+                              ▼                                             │
+                     ┌──────────────────┐                                   │
+                     │ Orchestrator-3   │── sin menores ──► cmd.storage ────┤
+                     │ (decide pixelar) │                                   │
+                     └────────┬─────────┘                                   │
+                              │ cmd.pixelation                              │
+                              ▼                                             ▼
+                     ┌────────────────────────────────────────────────────────┐
+                     │               Pixelation Service                       │
+                     │   marcos + terminada  /  solo marcos  /  sin imágenes  │
+                     │                evt.pixelation.completed                │
+                     └────────────────────────────────────────────────────────┘
+                                          │ PostgreSQL + MinIO
+                                          ▼
+                        ┌─────────────┐
+     Cliente ──────────►│    API-2    │
+                        │  (8001)     │
+                        └─────────────┘
+```
+
+### Infraestructura de soporte
+
+| Componente | Uso |
+|---|---|
+| **Apache Kafka 4.2** | Bus de eventos entre servicios |
+| **MinIO** | Almacenamiento de imágenes (S3-compatible) |
+| **PostgreSQL 15** | Estado de solicitudes y clasificaciones |
+
+### Flujo de eventos completo
+
+**Caso 1 — Imagen con menores detectados:**
+```
+POST /upload
+  API-1        → MinIO(images-raw) + BD(INICIADO) + cmd.face_detection
+  Detection    → detecta N caras + BD(fin_deteccion) + evt.face_detection.completed
+  Orch-2       → N crops a MinIO + N filas en BD(Imagenes) + cmd.age_detection
+  Age Service  → clasifica N caras + BD(Mayor_18, Escore) + evt.age_detection.completed
+  Orch-3       → hay menores → BD(Inicio_Pixelado) + cmd.pixelation
+  Pixelation   → marcos.jpg + terminada.jpg a MinIO + BD(COMPLETADO) + evt.pixelation.completed
+GET /resultado/{guid} → presigned URLs + scores por cara
+```
+
+**Caso 2 — Imagen sin caras:**
+```
+  Orch-2 → 0 caras → cmd.storage (faces=[])
+  Pixelation → BD(COMPLETADO) sin imágenes
+```
+
+**Caso 3 — Caras detectadas pero ningún menor:**
+```
+  Orch-3 → 0 menores → cmd.storage (faces=[adultos])
+  Pixelation → marcos.jpg a MinIO (adultos en verde) + BD(COMPLETADO)
+```
+
+### Estructura de mensajes Kafka
+
+Los contratos completos en formato JSON Schema están en el directorio `/contracts/`.
+
+**Ejemplo: `evt.age_detection.completed`**
 ```json
 {
-  "guid": "...",
-  "estado": "COMPLETADO",
-  "tiempos": {
-    "inicio_solicitud": "...",
-    "fin_solicitud": "...",
-    "inicio_deteccion_caras": "...",
-    "fin_deteccion_caras": "...",
-    "inicio_edad": "...",
-    "fin_edad": "...",
-    "inicio_pixelado": "...",
-    "fin_pixelado": "..."
-  },
-  "imagenes": {
-    "original":  "http://localhost:9000/images-raw/...?...",
-    "marcos":    "http://localhost:9000/images-processed/.../marcos.jpg?...",
-    "terminada": "http://localhost:9000/images-processed/.../terminada.jpg?..."
-  },
-  "caras_detectadas": 5,
-  "caras": [
-    { "id_imagen": 1, "es_menor": true, "score": 0.96, "bbox": {"x":10,"y":20,"w":50,"h":60} }
+  "version": "1.0",
+  "timestamp": "2025-01-01T12:00:00",
+  "GUID_Solicitud": "uuid-v4",
+  "Id_Imagen": 1,
+  "s3_key": "guid/uuid.jpg",
+  "faces": [
+    {
+      "face_id": 2,
+      "bbox": {"x": 100, "y": 50, "w": 80, "h": 90},
+      "es_menor": true,
+      "score": 0.8734
+    }
   ]
 }
 ```
 
-**Stack:** FastAPI · boto3 · psycopg2
-
 ---
 
-## Infraestructura
+## Gestión de errores
 
-| Servicio   | Imagen                     | Puerto(s)  | Uso                             |
-|------------|----------------------------|------------|---------------------------------|
-| Kafka      | apache/kafka:4.2.0 (KRaft) | 9092       | Bus de eventos (sin Zookeeper)  |
-| MinIO      | minio/minio                | 9000, 9001 | Almacenamiento de imágenes (S3) |
-| PostgreSQL | postgres:15                | 5432       | Base de datos relacional        |
-| Kafka UI   | provectuslabs/kafka-ui     | 8080       | Monitorización de tópicos       |
+### Qué ocurre si falla un servicio
 
-**Buckets MinIO:**
-- `images-raw` — imágenes originales y crops de caras por cara detectada
-- `images-processed` — imágenes finales (marcos y terminada); se crea automáticamente al arrancar Pixelation Service
+| Escenario | Comportamiento |
+|---|---|
+| **Falla Detection Service** | El mensaje `cmd.face_detection` permanece en Kafka. Al reiniciar, lo relee y reintenta. La solicitud en BD queda en estado `INICIADO`. |
+| **Falla Age Service** | El mensaje `cmd.age_detection` permanece en Kafka. Los crops siguen en MinIO. Al reiniciar, reclasifica desde el principio. |
+| **Falla Orchestrator-3** | El mensaje `evt.age_detection.completed` permanece en Kafka. Al reiniciar, repite la decisión menores/no menores. |
+| **Falla Pixelation Service** | El mensaje `cmd.pixelation` o `cmd.storage` permanece en Kafka. Al reiniciar, regenera las imágenes (la subida a MinIO es idempotente por clave fija). |
+| **Falla MinIO** | El servicio captura la excepción en el `try/except` del loop. El offset Kafka no avanza, por lo que el mensaje se reentrega al reiniciar. |
+| **Falla PostgreSQL** | Igual que MinIO: excepción capturada, offset no avanzado, reintento automático. |
 
----
+### Estrategias de manejo implementadas
 
-## Base de datos (PostgreSQL)
+**Reintentos automáticos por Kafka:**
+Todos los consumers usan `auto.offset.reset=earliest` y grupos de consumo dedicados (`face-group`, `orch-2-group`, etc.). Si un servicio falla sin confirmar el mensaje, Kafka lo reentrega al reiniciar. La entrega es *at-least-once*.
 
-### Tabla `Solicitud`
+**Aislamiento de errores por cara:**
+En Age Service y Orchestrator-2, los errores en el procesamiento de una cara individual son capturados y logueados sin interrumpir el procesamiento de las demás caras del mismo mensaje.
 
-| Columna                           | Tipo       | Descripción                              |
-|-----------------------------------|------------|------------------------------------------|
-| `GUID_Solicitud`                  | VARCHAR PK | Identificador único de la solicitud      |
-| `URL_Imagen_Original`             | VARCHAR    | Clave en MinIO de la imagen original     |
-| `URL_Imagen_Terminada`            | VARCHAR    | Clave en MinIO de la imagen pixelada     |
-| `URL_Imagen_Marcos`               | VARCHAR    | Clave en MinIO de la imagen con marcos   |
-| `Inicio_Solicitud`                | TIMESTAMP  | Recepción en API-1                       |
-| `Fin_Solicitud`                   | TIMESTAMP  | Cierre en Pixelation Service             |
-| `Inicio_Deteccion_Caras`          | TIMESTAMP  | Publicación de cmd.face_detection        |
-| `Fin_Deteccion_Caras`             | TIMESTAMP  | Fin de Detection Service                 |
-| `Inicio_Edad`                     | TIMESTAMP  | Publicación de cmd.age_detection         |
-| `Fin_edad`                        | TIMESTAMP  | Fin de Age Service                       |
-| `Inicio_Pixelado`                 | TIMESTAMP  | Publicación de cmd.pixelation            |
-| `Fin_Pixelado`                    | TIMESTAMP  | Fin de Pixelation Service                |
-| `Inicio_Almacenamiento_Solicitud` | TIMESTAMP  | Inicio de guardado de resultado          |
-| `Fin_Almacenamiento_Solicitud`    | TIMESTAMP  | Fin de guardado de resultado             |
-| `Estado`                          | VARCHAR    | `INICIADO` → `COMPLETADO`               |
+**Idempotencia en MinIO:**
+Las claves de las imágenes de salida son deterministas (`{guid}/marcos.jpg`, `{guid}/terminada.jpg`). Si se reprocesa una solicitud, las imágenes se sobreescriben sin efectos secundarios.
 
-### Tabla `Imagenes`
-Una fila por cara detectada (más una fila inicial de la imagen original creada en API-1).
+**Creación automática de buckets:**
+`api-1` crea `images-raw` al arrancar. `pixelation-service` crea `images-processed` al arrancar. El sistema no falla si los buckets ya existen.
 
-| Columna          | Tipo       | Descripción                        |
-|------------------|------------|------------------------------------|
-| `GUID_Solicitud` | VARCHAR FK | Referencia a la solicitud          |
-| `Id_Imagen`      | SERIAL PK  | Identificador de la cara           |
-| `URL_Imagen`     | VARCHAR    | Clave del crop de la cara en MinIO |
-| `Mayor_18`       | BOOLEAN    | `true` = mayor, `false` = menor    |
-| `Escore`         | DECIMAL    | Score de la red neuronal [0, 1]    |
-| `Imagen_X`       | INT        | Coordenada X del bounding box      |
-| `Imagen_Y`       | INT        | Coordenada Y del bounding box      |
-| `Imagen_Ancho`   | INT        | Ancho del bounding box             |
-| `Imagen_Alto`    | INT        | Alto del bounding box              |
+### Limitaciones conocidas
 
----
-
-## Contratos de eventos
-
-Definidos en `contratos_eventos_json/` como JSON Schema draft-07.
-
-```
-contratos_eventos_json/
-├── comandos/
-│   ├── cmd_face_detection.json
-│   ├── cmd_age_detection.json
-│   ├── cmd_pixelation.json
-│   └── cmd_storage.json
-└── eventos/
-    ├── evt_face_detection_completed.json
-    ├── evt_age_detection_completed.json
-    ├── evt_pixelation_completed.json
-    └── evt_storage_completed.json
-```
-
----
-
-## Entrenamiento del modelo de edad
-
-El script `training/train_age.py` entrena la CNN básica (arquitectura propia, sin pesos externos).
-
-**Opción A — Local con GPU (RTX 3080):**
-```bash
-bash scripts/train.sh
-```
-Requiere la carpeta `face_age/` en la raíz con subcarpetas numéricas por edad. El script entrena, copia el modelo a `services/age-service/` y reinicia el contenedor automáticamente.
-
-**Opción B — Google Colab:**
-1. Abrir `training/red_neuronal_proyecto_imagenes.ipynb` en Colab
-2. Descargar el `.h5` generado y guardarlo en `training/modelo_menores.h5`
-3. Ejecutar:
-```bash
-bash scripts/deploy_model.sh
-```
-
-El modelo actual (`val_accuracy ≈ 87.7 %`) fue entrenado con la CNN básica durante 28 epochs con GPU RTX 3080.
-
----
-
-## Levantar el sistema
-
-```bash
-cp .env.example .env   # rellenar credenciales
-docker compose up --build
-```
-
-> Los tópicos de Kafka se pre-crean al arranque mediante el servicio `kafka-init`. El bucket `images-processed` se crea automáticamente al arrancar Pixelation Service.
-
-**URLs tras el arranque:**
-- API-1: http://localhost:8000/docs
-- API-2: http://localhost:8001/docs
-- Kafka UI: http://localhost:8080
-- MinIO Console: http://localhost:9001
-
-**Subir una imagen de prueba:**
-```bash
-curl -X POST http://localhost:8000/upload -F "file=@prueba.jpg"
-# {"GUID_Solicitud": "...", "Id_Imagen": 1, "status": "INICIADO"}
-```
-
-**Consultar el resultado:**
-```bash
-curl http://localhost:8001/resultado/{GUID_Solicitud}
-```
-
----
-
-## Estructura del repositorio
-
-```
-proyecto_rostros/
-├── services/
-│   ├── api-1/                  # Ingesta (fusiona O1)
-│   ├── api-2/                  # Consulta de resultados
-│   ├── age-service/            # Clasificación menor/mayor con TF
-│   ├── detection-service/      # Detección de rostros (Haar Cascade)
-│   ├── orchestrator-2/         # Cropea caras y enruta a age detection
-│   ├── orchestrator-3/         # Enruta a pixelation
-│   └── pixelation-service/     # Genera imágenes finales (fusiona O4)
-│       └── (cada uno: main.py, config.py, services/, Dockerfile, requirements.txt)
-├── infra/
-│   └── postgres/
-│       └── init.sql            # DDL de Solicitud e Imagenes
-├── training/
-│   ├── train_age.py            # Script de entrenamiento CNN
-│   ├── Dockerfile              # Imagen de entrenamiento (TF GPU)
-│   ├── modelo_menores.h5       # Modelo entrenado (no gitignored aquí)
-│   └── red_neuronal_proyecto_imagenes.ipynb  # Experimentos Colab
-├── contracts/
-│   ├── comandos/               # JSON Schema de comandos Kafka
-│   └── eventos/                # JSON Schema de eventos Kafka
-├── scripts/
-│   ├── train.sh                # Entrena con GPU y despliega
-│   └── deploy_model.sh         # Despliega modelo externo (Colab)
-├── docker-compose.yml
-├── .env                        # Credenciales (no en git)
-├── .env.example                # Plantilla de credenciales
-├── .gitignore
-└── README.md
-```
+- **Sin dead-letter queue (DLQ):** Los mensajes sistemáticamente inprocesables (imagen corrupta, formato inesperado) no se apartan a un topic de errores. El consumer podría quedarse atascado en ellos.
+- **Sin backoff exponencial:** Un fallo de BD o MinIO provoca reintento inmediato en el siguiente ciclo del loop, sin espera progresiva.
+- **Consistencia eventual:** El estado en BD puede quedar parcialmente actualizado si un servicio falla a mitad del procesamiento de un mensaje con múltiples caras.
