@@ -10,6 +10,11 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="API Resultados Rostros")
 
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "service": "api-2"}
+
 db_service      = DatabaseService(DB_CONF)
 storage_service = StorageService(MINIO_CONF, MINIO_PUBLIC_URL, BUCKET_RAW, BUCKET_PROCESSED)
 

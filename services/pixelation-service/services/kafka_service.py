@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from confluent_kafka import Consumer, Producer
 import logging
 
@@ -26,6 +27,22 @@ class KafkaProducerService:
             logger.error(f"Kafka error: {err}")
         else:
             logger.debug(f"Kafka: evento enviado a {msg.topic()}")
+
+    def publish_pixelation_completed(self, guid: str, id_imagen: int, s3_key: str, faces: list):
+        event = {
+            "version":        "1.0",
+            "timestamp":      datetime.utcnow().isoformat(),
+            "GUID_Solicitud": guid,
+            "Id_Imagen":      id_imagen,
+            "s3_key":         s3_key,
+            "faces":          faces
+        }
+        self.producer.produce(
+            "evt.pixelation.completed",
+            value=json.dumps(event).encode("utf-8"),
+            callback=self._delivery_report
+        )
+        self.producer.flush(timeout=5)
 
     def close(self):
         self.producer.flush(timeout=5)
