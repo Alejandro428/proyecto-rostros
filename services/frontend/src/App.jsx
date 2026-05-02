@@ -18,7 +18,7 @@ export default function App() {
     try {
       const datos = await consultarResultado(guidBuscado)
       setGuid(guidBuscado)
-      if (datos.estado === 'COMPLETADO') {
+      if (datos.estado === 'COMPLETADA') {
         setResultado(datos)
         setPantalla('resultado')
       } else {
@@ -50,7 +50,7 @@ export default function App() {
         <p>Sistema automático de detección y pixelado de rostros de menores</p>
       </header>
 
-      <main className="contenido-principal">
+      <main className="contenido-principal" key={pantalla}>
         {pantalla === 'subida' && (
           <ZonaSubida
             onSubir={alSubirImagen}

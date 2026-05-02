@@ -14,6 +14,9 @@ class KafkaConsumerService:
     def poll(self, timeout: float = 1.0):
         return self.consumer.poll(timeout)
 
+    def commit(self):
+        self.consumer.commit(asynchronous=False)
+
     def close(self):
         self.consumer.close()
 
@@ -31,7 +34,7 @@ class KafkaProducerService:
     def publish_cmd_age_detection(self, guid: str, id_imagen: int, s3_key: str, faces: list):
         event = {
             "version":        "1.0",
-            "timestamp":      datetime.utcnow().isoformat(),
+            "timestamp":      datetime.utcnow().isoformat() + "Z",
             "GUID_Solicitud": guid,
             "Id_Imagen":      id_imagen,
             "s3_key":         s3_key,
@@ -47,7 +50,7 @@ class KafkaProducerService:
     def publish_cmd_storage(self, guid: str, id_imagen: int, s3_key: str, faces: list):
         event = {
             "version":        "1.0",
-            "timestamp":      datetime.utcnow().isoformat(),
+            "timestamp":      datetime.utcnow().isoformat() + "Z",
             "GUID_Solicitud": guid,
             "Id_Imagen":      id_imagen,
             "s3_key":         s3_key,

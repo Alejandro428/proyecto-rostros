@@ -17,7 +17,7 @@ class DatabaseService:
             cur.execute(
                 "INSERT INTO Solicitud (GUID_Solicitud, URL_Imagen_Original, Inicio_Solicitud, Estado) "
                 "VALUES (%s, %s, %s, %s)",
-                (guid_solicitud, s3_key, datetime.utcnow(), "INICIADO")
+                (guid_solicitud, s3_key, datetime.utcnow(), "CREADA")
             )
             
             cur.execute(
@@ -36,6 +36,22 @@ class DatabaseService:
             conn.rollback()
             logger.error(f"BD error: {e}")
             raise
+        finally:
+            cur.close()
+            conn.close()
+
+    def delete_request(self, guid_solicitud: str):
+        """Elimina solicitud e imágenes de BD (rollback tras fallo de Kafka)."""
+        conn = psycopg2.connect(**self.db_conf)
+        cur = conn.cursor()
+        try:
+            cur.execute("DELETE FROM Imagenes WHERE GUID_Solicitud = %s", (guid_solicitud,))
+            cur.execute("DELETE FROM Solicitud WHERE GUID_Solicitud = %s", (guid_solicitud,))
+            conn.commit()
+            logger.info(f"BD: rollback OK - GUID={guid_solicitud}")
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"BD error en rollback: {e}")
         finally:
             cur.close()
             conn.close()

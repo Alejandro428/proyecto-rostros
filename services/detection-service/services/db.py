@@ -26,3 +26,20 @@ class DatabaseService:
         finally:
             cur.close()
             conn.close()
+
+    def update_estado_error(self, guid_solicitud: str):
+        conn = psycopg2.connect(**self.db_conf)
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE Solicitud SET Estado = 'ERROR' WHERE GUID_Solicitud = %s",
+                (guid_solicitud,)
+            )
+            conn.commit()
+            logger.info(f"BD: Estado=ERROR - GUID={guid_solicitud}")
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"BD error al marcar error: {e}")
+        finally:
+            cur.close()
+            conn.close()

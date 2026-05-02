@@ -1,3 +1,4 @@
+import signal
 import cv2
 import json
 import logging
@@ -16,7 +17,6 @@ from services.kafka_service import KafkaConsumerService, KafkaProducerService
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 model = tf.keras.models.load_model(MODEL_PATH)
 logger.info(f"Modelo cargado desde {MODEL_PATH}")
 db_service       = DatabaseService(DB_CONF)
@@ -24,9 +24,19 @@ storage_service  = StorageService(MINIO_CONF, BUCKET_RAW)
 consumer_service = KafkaConsumerService(KAFKA_CONF_CONSUMER, TOPIC_CONSUME)
 producer_service = KafkaProducerService(KAFKA_CONF_PRODUCER)
 
+running = True
+
+def _shutdown(sig, frame):
+    global running
+    logger.info("Señal de parada recibida, cerrando...")
+    running = False
+
+signal.signal(signal.SIGTERM, _shutdown)
+signal.signal(signal.SIGINT, _shutdown)
+
 logger.info("--- [AGE SERVICE] INICIADO ---")
 
-while True:
+while running:
     msg = consumer_service.poll(1.0)
     if msg is None:
         continue
@@ -35,6 +45,7 @@ while True:
         logger.error(f"Kafka error: {msg.error()}")
         continue
 
+    guid = None
     try:
         data = json.loads(msg.value().decode("utf-8"))
 
@@ -45,6 +56,7 @@ while True:
 
         if not guid or not faces:
             logger.warning(f"Mensaje vacío o sin caras: {data}")
+            consumer_service.commit()
             continue
 
         processed_faces = []
@@ -55,7 +67,6 @@ while True:
                 bbox        = face["bbox"]
                 s3_key_cara = face["s3_key_cara"]
 
-                # Descargar crop de la cara
                 img = storage_service.download_image(s3_key_cara)
 
                 # OpenCV carga en BGR; el modelo se entrenó con RGB → convertir antes de preprocesar
@@ -63,8 +74,7 @@ while True:
                 img_rgb     = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
                 img_input   = np.expand_dims(preprocess_input(img_rgb.astype("float32")), axis=0)
 
-                # Predicción — salida sigmoid: float en [0, 1]
-                # Clases ordenadas alfabéticamente: 0=mayor, 1=menor → score >= 0.5 = MENOR
+                # Clases ordenadas alfabéticamente: 0=mayor, 1=menor → score >= threshold = MENOR
                 score    = float(model.predict(img_input, verbose=0)[0][0])
                 es_menor = score >= THRESHOLD
 
@@ -82,11 +92,17 @@ while True:
             except Exception as e:
                 logger.error(f"[ERROR face_id={face.get('face_id')}] {e}")
 
-        db_service.update_fin_edad(guid)
-
         logger.info(f"[AGE] {guid} → {len(processed_faces)} caras procesadas")
 
+        # Kafka primero, luego BD
         producer_service.publish_age_detection_completed(guid, id_imagen, s3_key, processed_faces)
+        db_service.update_fin_edad(guid)
+        consumer_service.commit()
 
     except Exception as e:
-        logger.error(f"[ERROR AGE SERVICE] {e}")
+        logger.error(f"[ERROR AGE SERVICE] procesando {guid}: {e}")
+        if guid:
+            db_service.update_estado_error(guid)
+        consumer_service.commit()
+
+consumer_service.close()

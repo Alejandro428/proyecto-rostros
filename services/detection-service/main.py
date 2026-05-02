@@ -1,3 +1,4 @@
+import signal
 import cv2
 import json
 import logging
@@ -19,9 +20,19 @@ producer_service = KafkaProducerService(KAFKA_CONF_PRODUCER)
 face_detector = FaceAnalysis(name="buffalo_l", allowed_modules=["detection"])
 face_detector.prepare(ctx_id=-1, det_size=(640, 640))
 
+running = True
+
+def _shutdown(sig, frame):
+    global running
+    logger.info("Señal de parada recibida, cerrando...")
+    running = False
+
+signal.signal(signal.SIGTERM, _shutdown)
+signal.signal(signal.SIGINT, _shutdown)
+
 logger.info("--- [FACE DETECTION SERVICE] INICIADO ---")
 
-while True:
+while running:
     msg = consumer_service.poll(1.0)
     if msg is None:
         continue
@@ -30,6 +41,7 @@ while True:
         logger.error(f"Kafka error: {msg.error()}")
         continue
 
+    guid = None
     try:
         data = json.loads(msg.value().decode("utf-8"))
 
@@ -38,7 +50,8 @@ while True:
         s3_key    = data.get("s3_key")
 
         if not guid or not s3_key or not id_imagen:
-            logger.warning(f"Mensaje incompleto, ignorando: {data}")
+            logger.warning(f"Mensaje incompleto, descartando: {data}")
+            consumer_service.commit()
             continue
 
         # 1. Descargar imagen
@@ -63,11 +76,19 @@ while True:
 
         logger.info(f"[DETECTION] {guid} -> {len(face_list)} caras detectadas")
 
-        # 3. Métrica BD
-        db_service.update_fin_deteccion_caras(guid)
-
-        # 4. Publicar evento
+        # 3. Publicar evento primero para garantizar consistencia
         producer_service.publish_face_detection_completed(guid, id_imagen, s3_key, face_list)
 
+        # 4. Métrica BD sólo si Kafka tuvo éxito
+        db_service.update_fin_deteccion_caras(guid)
+
+        # 5. Confirmar offset tras procesamiento completo
+        consumer_service.commit()
+
     except Exception as e:
-        logger.error(f"[ERROR] {str(e)}")
+        logger.error(f"[ERROR] procesando {guid}: {e}")
+        if guid:
+            db_service.update_estado_error(guid)
+        consumer_service.commit()
+
+consumer_service.close()

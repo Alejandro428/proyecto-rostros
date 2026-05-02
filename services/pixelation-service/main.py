@@ -1,3 +1,4 @@
+import signal
 import cv2
 import json
 import logging
@@ -18,6 +19,16 @@ db_service       = DatabaseService(DB_CONF)
 storage_service  = StorageService(MINIO_CONF, BUCKET_RAW, BUCKET_PROCESSED)
 consumer_service = KafkaConsumerService(KAFKA_CONF_CONSUMER, TOPICS_CONSUME)
 producer_service = KafkaProducerService(KAFKA_CONF_PRODUCER)
+
+running = True
+
+def _shutdown(sig, frame):
+    global running
+    logger.info("Señal de parada recibida, cerrando...")
+    running = False
+
+signal.signal(signal.SIGTERM, _shutdown)
+signal.signal(signal.SIGINT, _shutdown)
 
 logger.info("--- [PIXELATION SERVICE] INICIADO ---")
 
@@ -70,7 +81,7 @@ def generar_imagen_terminada(img: np.ndarray, faces: list) -> np.ndarray:
     return resultado
 
 
-while True:
+while running:
     msg = consumer_service.poll(1.0)
     if msg is None:
         continue
@@ -79,6 +90,7 @@ while True:
         logger.error(f"Kafka error: {msg.error()}")
         continue
 
+    guid = None
     try:
         topic = msg.topic()
         data  = json.loads(msg.value().decode("utf-8"))
@@ -91,10 +103,11 @@ while True:
         logger.info(f"[PIXELATION] {guid} — topic={topic} — {len(faces)} caras")
 
         if topic == "cmd.storage" and not faces:
-            # Sin caras (viene de O2): cerrar sin imágenes
-            db_service.update_fin_solicitud_sin_caras(guid)
+            # Sin caras (viene de O2): Kafka primero, luego BD
             producer_service.publish_pixelation_completed(guid, id_imagen, s3_key, [])
+            db_service.update_fin_solicitud_sin_caras(guid)
             logger.info(f"[PIXELATION] {guid} → completado sin caras")
+            consumer_service.commit()
             continue
 
         if topic == "cmd.storage" and faces:
@@ -103,9 +116,10 @@ while True:
             img_marcos   = generar_imagen_marcos(img_original, faces)
             key_marcos   = f"{guid}/marcos.jpg"
             storage_service.upload_image(img_marcos, key_marcos)
-            db_service.update_fin_solo_marcos(guid, key_marcos)
             producer_service.publish_pixelation_completed(guid, id_imagen, s3_key, faces)
+            db_service.update_fin_solo_marcos(guid, key_marcos)
             logger.info(f"[PIXELATION] {guid} → completado sin menores — marcos={key_marcos}")
+            consumer_service.commit()
             continue
 
         # cmd.pixelation — hay menores: generar marcos + terminada
@@ -118,9 +132,16 @@ while True:
         storage_service.upload_image(img_marcos,    key_marcos)
         storage_service.upload_image(img_terminada, key_terminada)
 
-        db_service.update_fin_solicitud(guid, key_terminada, key_marcos)
+        # Kafka primero, luego BD
         producer_service.publish_pixelation_completed(guid, id_imagen, s3_key, faces)
+        db_service.update_fin_solicitud(guid, key_terminada, key_marcos)
         logger.info(f"[PIXELATION] {guid} → completado — marcos={key_marcos} terminada={key_terminada}")
+        consumer_service.commit()
 
     except Exception as e:
-        logger.error(f"[ERROR PIXELATION] {e}")
+        logger.error(f"[ERROR PIXELATION] procesando {guid}: {e}")
+        if guid:
+            db_service.update_estado_error(guid)
+        consumer_service.commit()
+
+consumer_service.close()

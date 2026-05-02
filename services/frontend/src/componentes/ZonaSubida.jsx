@@ -39,6 +39,7 @@ export default function ZonaSubida({ onSubir, onBuscar }) {
   const [subiendo, setSubiendo] = useState(false)
   const [error, setError] = useState(null)
   const [mostrarLista, setMostrarLista] = useState(false)
+  const [cerrandoLista, setCerrandoLista] = useState(false)
 
   const [recientes, setRecientes] = useState([])
   const [solicitudes, setSolicitudes] = useState([])
@@ -254,13 +255,22 @@ export default function ZonaSubida({ onSubir, onBuscar }) {
 
       <button
         className="boton-toggle-lista"
-        onClick={() => setMostrarLista(v => !v)}
+        onClick={() => {
+          if (mostrarLista) {
+            setCerrandoLista(true)
+            setTimeout(() => { setMostrarLista(false); setCerrandoLista(false) }, 220)
+          } else {
+            setMostrarLista(true)
+          }
+        }}
       >
         {mostrarLista ? 'Ocultar' : 'Ver historial completo'}
       </button>
 
       {mostrarLista && (
-        <ListaSolicitudes onSeleccionar={(guid) => { setMostrarLista(false); onBuscar(guid) }} />
+        <div className={cerrandoLista ? 'lista-cerrando' : ''}>
+          <ListaSolicitudes onSeleccionar={(guid) => { setMostrarLista(false); onBuscar(guid) }} />
+        </div>
       )}
     </div>
   )

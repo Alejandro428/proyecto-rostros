@@ -9,6 +9,19 @@ class DatabaseService:
     def __init__(self, db_conf: dict):
         self.db_conf = db_conf
 
+    def update_estado_error(self, guid: str):
+        conn = psycopg2.connect(**self.db_conf)
+        cur = conn.cursor()
+        try:
+            cur.execute("UPDATE Solicitud SET Estado = 'ERROR' WHERE GUID_Solicitud = %s", (guid,))
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"BD error al marcar error: {e}")
+        finally:
+            cur.close()
+            conn.close()
+
     def insert_cara(self, guid: str, x: int, y: int, w: int, h: int) -> int:
         """Inserta fila de cara en Imagenes. Retorna Id_Imagen."""
         conn = psycopg2.connect(**self.db_conf)
@@ -47,16 +60,34 @@ class DatabaseService:
             cur.close()
             conn.close()
 
+    def update_caras_detectadas(self, guid: str):
+        conn = psycopg2.connect(**self.db_conf)
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE Solicitud SET Estado = 'CARAS_DETECTADAS' WHERE GUID_Solicitud = %s",
+                (guid,)
+            )
+            conn.commit()
+            logger.info(f"BD: Estado=CARAS_DETECTADAS - GUID={guid}")
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"BD error update_caras_detectadas: {e}")
+            raise
+        finally:
+            cur.close()
+            conn.close()
+
     def update_inicio_edad(self, guid: str):
         conn = psycopg2.connect(**self.db_conf)
         cur = conn.cursor()
         try:
             cur.execute(
-                "UPDATE Solicitud SET Inicio_Edad = %s WHERE GUID_Solicitud = %s",
+                "UPDATE Solicitud SET Inicio_Edad = %s, Estado = 'CARAS_DETECTADAS' WHERE GUID_Solicitud = %s",
                 (datetime.utcnow(), guid)
             )
             conn.commit()
-            logger.info(f"BD: Inicio_Edad actualizado - GUID={guid}")
+            logger.info(f"BD: Inicio_Edad + CARAS_DETECTADAS - GUID={guid}")
         except Exception as e:
             conn.rollback()
             logger.error(f"BD error update_inicio_edad: {e}")
