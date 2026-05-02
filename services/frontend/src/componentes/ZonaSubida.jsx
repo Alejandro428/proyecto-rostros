@@ -8,8 +8,6 @@ const TAMANO_MAXIMO_BYTES = TAMANO_MAXIMO_MB * 1024 * 1024
 const MAGIC = [
   { bytes: [0xFF, 0xD8, 0xFF],       tipo: 'JPEG' },
   { bytes: [0x89, 0x50, 0x4E, 0x47], tipo: 'PNG'  },
-  { bytes: [0x42, 0x4D],             tipo: 'BMP'  },
-  { bytes: [0x47, 0x49, 0x46, 0x38], tipo: 'GIF'  },
 ]
 
 function detectarTipoReal(archivo) {
@@ -159,7 +157,7 @@ export default function ZonaSubida({ onSubir, onBuscar }) {
 
       <div className="info-formatos">
         <span className="etiqueta-formatos">Formatos aceptados:</span>
-        {['JPEG', 'PNG', 'BMP', 'GIF'].map(f => (
+        {['JPEG', 'PNG'].map(f => (
           <span key={f} className="badge-formato">{f}</span>
         ))}
         <span className="separador">·</span>
@@ -197,13 +195,13 @@ export default function ZonaSubida({ onSubir, onBuscar }) {
         </>
       )}
 
-      <div className="separador-busqueda"><span>buscar solicitud</span></div>
+      <div className="separador-busqueda"><span>historial</span></div>
 
       <div className="autocomplete-wrapper">
         <input
           type="text"
           className="input-guid"
-          placeholder="Escribe parte del ID para buscar..."
+          placeholder="Buscar por ID de solicitud..."
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
           onFocus={() => {
@@ -251,20 +249,18 @@ export default function ZonaSubida({ onSubir, onBuscar }) {
         )}
       </div>
 
-      <div className="separador-busqueda"><span>todas las solicitudes</span></div>
-
       <button
         className="boton-toggle-lista"
         onClick={() => {
           if (mostrarLista) {
             setCerrandoLista(true)
-            setTimeout(() => { setMostrarLista(false); setCerrandoLista(false) }, 220)
+            setTimeout(() => { setMostrarLista(false); setCerrandoLista(false) }, 300)
           } else {
             setMostrarLista(true)
           }
         }}
       >
-        {mostrarLista ? 'Ocultar' : 'Ver historial completo'}
+        {mostrarLista ? 'Ocultar historial' : 'Ver historial completo'}
       </button>
 
       {mostrarLista && (

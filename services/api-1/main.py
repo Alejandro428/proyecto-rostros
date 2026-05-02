@@ -37,9 +37,6 @@ app.add_middleware(
 MAGIC_SIGNATURES = [
     (b'\xff\xd8\xff',  'image/jpeg'),
     (b'\x89PNG',       'image/png'),
-    (b'BM',            'image/bmp'),
-    (b'GIF87a',        'image/gif'),
-    (b'GIF89a',        'image/gif'),
 ]
 
 def detectar_content_type(header: bytes) -> str | None:

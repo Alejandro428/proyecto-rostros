@@ -35,5 +35,5 @@ KAFKA_CONF = {
 }
 
 # Upload
-ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "bmp", "gif"}
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 50 * 1024 * 1024))  # 50MB default
