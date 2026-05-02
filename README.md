@@ -13,6 +13,7 @@ Sistema distribuido orientado a eventos para detectar rostros en imágenes, clas
 5. [Topics y flujo de eventos](#topics-y-flujo-de-eventos)
 6. [Documentación funcional](#documentación-funcional)
 7. [Gestión de errores](#gestión-de-errores)
+8. [Decisiones de diseño](#decisiones-de-diseño)
 
 ---
 
@@ -26,7 +27,6 @@ Sistema distribuido orientado a eventos para detectar rostros en imágenes, clas
 ### Instalar Git LFS
 
 ```bash
-# Si no lo tienes instalado:
 git lfs install
 ```
 
@@ -50,6 +50,8 @@ DB_PASSWORD=postgres
 MAX_FILE_SIZE=10485760
 PYTHONUNBUFFERED=1
 ```
+
+Todos los servicios validan al arranque que estas variables estén presentes. Si falta alguna, el contenedor termina inmediatamente con un mensaje de error claro en lugar de fallar más tarde con un error críptico de conexión.
 
 ---
 
@@ -86,7 +88,7 @@ Todos los servicios deben estar en estado `running`. El contenedor `kafka-init` 
 
 También puedes usar la API directamente:
 
-**Formatos de imagen compatibles:** `JPEG`, `PNG`, `BMP`, `GIF` (validados por magic bytes) — tamaño máximo **10 MB**
+**Formatos de imagen compatibles:** `JPEG`, `PNG`, `BMP`, `GIF` — tamaño máximo **10 MB**
 
 **Subir una imagen:**
 ```bash
@@ -96,7 +98,7 @@ curl -X POST http://localhost:8000/upload \
 
 La respuesta incluye el `GUID_Solicitud`:
 ```json
-{"GUID_Solicitud": "abc-123", "Id_Imagen": 1, "status": "INICIADO"}
+{"GUID_Solicitud": "abc-123", "Id_Imagen": 1, "status": "CREADA"}
 ```
 
 **Consultar el resultado completo** (esperar unos segundos):
@@ -172,12 +174,12 @@ proyecto_rostros/
 
 ### Frontend (puerto 3000)
 
-Interfaz web construida con React + Vite y servida por Nginx. Construida mediante un servicio `frontend-builder` en Docker Compose (patrón necesario por limitaciones MTU de WSL2 con `docker build`).
+Interfaz web construida con React + Vite y servida por Nginx. Construida mediante un servicio `frontend-builder` en Docker Compose — este patrón es necesario porque `docker build` en WSL2 falla al descargar paquetes npm por limitaciones de MTU de red; ejecutar el build como un contenedor independiente evita ese problema.
 
 **Funcionalidades:**
 - Subida de imagen por arrastrar y soltar o selector de fichero
-- Validación de formato por magic bytes (contenido real, no solo extensión)
-- Pantalla de procesamiento con polling automático
+- Validación de formato por magic bytes (contenido real del fichero, no solo extensión)
+- Pantalla de procesamiento con polling automático hasta obtener resultado
 - Visualización de resultado: imagen original, con marcos de color y pixelada
 - Galería de caras individuales con clasificación y score de la red neuronal
 - Búsqueda con autocompletado sobre el historial de solicitudes
@@ -193,13 +195,15 @@ Punto de entrada del sistema. Fusiona el rol de Orquestador-1.
 **Responsabilidades:**
 - Valida el fichero recibido por magic bytes y tamaño máximo
 - Sube la imagen original al bucket `images-raw` de MinIO
-- Registra la solicitud en PostgreSQL con estado `INICIADO`
+- Registra la solicitud en PostgreSQL con estado `CREADA`
 - Publica `images.raw` y `cmd.face_detection` en Kafka
 - Devuelve el `GUID_Solicitud` al cliente
 
 **Endpoints:**
 - `POST /upload` — sube una imagen e inicia el pipeline. Formatos aceptados: `jpg`, `jpeg`, `png`, `bmp`, `gif`. Tamaño máximo: 10 MB.
 - `GET /health` — comprobación de salud
+
+**Orden de operaciones:** MinIO → PostgreSQL → Kafka. Este orden es deliberado: si MinIO falla no se crea registro en BD; si Kafka falla se hace rollback del registro en BD. Así nunca queda una solicitud registrada que el sistema no pueda procesar.
 
 ---
 
@@ -211,22 +215,23 @@ Detecta los rostros presentes en la imagen mediante RetinaFace (insightface).
 - Consume `cmd.face_detection`
 - Descarga la imagen de MinIO
 - Ejecuta la detección con el modelo `buffalo_l` de insightface
-- Registra en BD el timestamp de fin de detección
 - Publica `evt.face_detection.completed` con la lista de bounding boxes
+- Registra en BD el timestamp de fin de detección
 
-**Configuración:** `model_selection=buffalo_l`, `det_size=(640, 640)`, CPU inference
+**Configuración:** `model=buffalo_l`, `det_size=(640, 640)`, CPU inference
 
 ---
 
 ### Orchestrator-2 — Orquestación post-detección
 
-Procesa el resultado de la detección y decide el siguiente paso.
+Procesa el resultado de la detección y prepara las caras para la clasificación de edad.
 
 **Responsabilidades:**
 - Consume `evt.face_detection.completed`
-- Para cada cara detectada: recorta el crop, lo sube a MinIO e inserta una fila en `Imagenes`
-- **Si hay caras:** publica `cmd.age_detection` con los crops
-- **Si no hay caras:** publica `cmd.storage` para cerrar el flujo
+- Descarga la imagen original de MinIO
+- Para cada cara detectada: recorta el crop, lo sube a MinIO en `{guid}/faces/{id}.jpg` e inserta una fila en la tabla `Imagenes`
+- **Si hay caras:** actualiza el estado a `CARAS_DETECTADAS` y publica `cmd.age_detection`
+- **Si no hay caras:** actualiza el estado a `CARAS_DETECTADAS` y publica `cmd.storage` para cerrar el flujo directamente
 
 ---
 
@@ -239,9 +244,10 @@ Clasifica si cada cara corresponde a un menor mediante una CNN entrenada.
 - Descarga cada crop de MinIO
 - Aplica el modelo `modelo_menores.h5` con umbral `score >= 0.45 → MENOR`
 - Actualiza `Mayor_18` y `Escore` en BD por cada cara
+- Actualiza el estado a `EDAD_CALCULADA`
 - Publica `evt.age_detection.completed` con `score` y `es_menor` por cara
 
-**Modelo:** ResNet50 con fine-tuning en dos fases (base congelada → fine-tuning últimas 30 capas). Entrenado sobre dataset `face_age` con augmentación (flip, rotación, zoom, brillo, contraste) y class weighting. Entrada `256×320×3`, salida sigmoid `[0,1]`. Distribuido vía Git LFS (~95 MB).
+**Modelo:** ResNet50 con fine-tuning en dos fases (base congelada → fine-tuning últimas 30 capas). Entrenado sobre dataset `face_age` con augmentación (flip, rotación, zoom, brillo, contraste) y class weighting. Entrada `256×320×3`, salida sigmoid `[0,1]`. El umbral de 0.45 (en lugar de 0.50) prioriza no perder ningún menor a costa de algún falso positivo. Distribuido vía Git LFS (~95 MB).
 
 ---
 
@@ -251,7 +257,7 @@ Evalúa si existen menores y decide si es necesario pixelar.
 
 **Responsabilidades:**
 - Consume `evt.age_detection.completed`
-- **Si hay menores:** actualiza `Inicio_Pixelado` en BD y publica `cmd.pixelation`
+- **Si hay menores:** registra el inicio del pixelado en BD y publica `cmd.pixelation`
 - **Si no hay menores:** publica `cmd.storage` (no se pixela nada)
 
 ---
@@ -262,20 +268,19 @@ Genera las imágenes de salida y cierra el flujo. Fusiona el rol de Orquestador-
 
 **Responsabilidades:**
 - Consume `cmd.pixelation` y `cmd.storage`
-- Crea automáticamente el bucket `images-processed` si no existe
 
 **Caso `cmd.pixelation` (hay menores):**
 - Genera imagen con marcos: rectángulo rojo (MENOR) o verde (ADULTO) con score
 - Genera imagen terminada: caras de menores pixeladas (reducción a 12×12 y escalado)
 - Sube ambas imágenes a `images-processed`
-- Cierra la solicitud con `Estado = COMPLETADO`
+- Cierra la solicitud con `Estado = COMPLETADA`
 
 **Caso `cmd.storage` con caras (no hay menores):**
 - Genera solo la imagen con marcos (todos marcados como ADULTO en verde)
-- Cierra la solicitud con `Estado = COMPLETADO`
+- Cierra la solicitud con `Estado = COMPLETADA`
 
 **Caso `cmd.storage` sin caras:**
-- Cierra la solicitud con `Estado = COMPLETADO` sin generar imágenes
+- Cierra la solicitud con `Estado = COMPLETADA` sin generar imágenes adicionales
 
 En todos los casos publica `evt.pixelation.completed`.
 
@@ -283,7 +288,7 @@ En todos los casos publica `evt.pixelation.completed`.
 
 ### API-2 — Consulta de resultados (puerto 8001)
 
-Sirve los resultados procesados mediante presigned URLs de MinIO (válidas 1 hora).
+Sirve los resultados procesados mediante presigned URLs de MinIO (válidas 1 hora). Una presigned URL es una URL temporal firmada con las credenciales del servidor que permite al navegador descargar directamente el fichero de MinIO sin necesidad de que el backend actúe de intermediario en la transferencia de datos.
 
 **Endpoints:**
 - `GET /resultado/{guid}` — solicitud completa: estado, tiempos (en UTC), imagen original, imagen con marcos, imagen terminada, y lista de caras con su clasificación y bounding box
@@ -336,7 +341,7 @@ Sirve los resultados procesados mediante presigned URLs de MinIO (válidas 1 hor
                               ▼                                             │
                      ┌──────────────────┐                                   │
                      │  Age Service     │                                   │
-                     │  (ResNet50≥0.40) │                                   │
+                     │  (ResNet50≥0.45) │                                   │
                      └────────┬─────────┘                                   │
                               │ evt.age_detection.completed                 │
                               ▼                                             │
@@ -367,30 +372,45 @@ Sirve los resultados procesados mediante presigned URLs de MinIO (válidas 1 hor
 | **MinIO** | Almacenamiento de imágenes (S3-compatible) |
 | **PostgreSQL 15** | Estado de solicitudes y clasificaciones |
 
+### Estados del ciclo de vida de una solicitud
+
+```
+CREADA → CARAS_DETECTADAS → EDAD_CALCULADA → COMPLETADA
+                                             ERROR (en cualquier punto si falla un servicio)
+```
+
+| Estado | Lo establece | Significado |
+|---|---|---|
+| `CREADA` | API-1 | Imagen recibida y encolada |
+| `CARAS_DETECTADAS` | Orchestrator-2 | Detección terminada, crops subidos a MinIO |
+| `EDAD_CALCULADA` | Age Service | Clasificación de edad completada |
+| `COMPLETADA` | Pixelation Service | Imágenes de salida generadas, flujo cerrado |
+| `ERROR` | Cualquier consumer | Fallo irrecuperable durante el procesamiento |
+
 ### Flujo de eventos completo
 
 **Caso 1 — Imagen con menores detectados:**
 ```
 POST /upload
-  API-1        → MinIO(images-raw) + BD(INICIADO) + cmd.face_detection
-  Detection    → detecta N caras + BD(fin_deteccion) + evt.face_detection.completed
-  Orch-2       → N crops a MinIO + N filas en BD(Imagenes) + cmd.age_detection
-  Age Service  → clasifica N caras + BD(Mayor_18, Escore) + evt.age_detection.completed
+  API-1        → MinIO(images-raw) + BD(CREADA) + cmd.face_detection
+  Detection    → detecta N caras + evt.face_detection.completed + BD(fin_deteccion)
+  Orch-2       → N crops a MinIO + BD(Imagenes) + BD(CARAS_DETECTADAS) + cmd.age_detection
+  Age Service  → clasifica N caras + BD(Mayor_18, Escore) + BD(EDAD_CALCULADA) + evt.age_detection.completed
   Orch-3       → hay menores → BD(Inicio_Pixelado) + cmd.pixelation
-  Pixelation   → marcos.jpg + terminada.jpg a MinIO + BD(COMPLETADO) + evt.pixelation.completed
+  Pixelation   → marcos.jpg + terminada.jpg a MinIO + BD(COMPLETADA) + evt.pixelation.completed
 GET /resultado/{guid} → presigned URLs + scores por cara
 ```
 
 **Caso 2 — Imagen sin caras:**
 ```
-  Orch-2 → 0 caras → cmd.storage (faces=[])
-  Pixelation → BD(COMPLETADO) sin imágenes
+  Orch-2 → 0 caras → BD(CARAS_DETECTADAS) + cmd.storage (faces=[])
+  Pixelation → BD(COMPLETADA) sin imágenes adicionales
 ```
 
 **Caso 3 — Caras detectadas pero ningún menor:**
 ```
   Orch-3 → 0 menores → cmd.storage (faces=[adultos])
-  Pixelation → marcos.jpg a MinIO (adultos en verde) + BD(COMPLETADO)
+  Pixelation → marcos.jpg a MinIO (adultos en verde) + BD(COMPLETADA)
 ```
 
 ### Estructura de mensajes Kafka
@@ -401,7 +421,7 @@ Los contratos completos en formato JSON Schema están en el directorio `/contrac
 ```json
 {
   "version": "1.0",
-  "timestamp": "2025-01-01T12:00:00",
+  "timestamp": "2025-01-01T12:00:00Z",
   "GUID_Solicitud": "uuid-v4",
   "Id_Imagen": 1,
   "s3_key": "guid/uuid.jpg",
@@ -424,29 +444,68 @@ Los contratos completos en formato JSON Schema están en el directorio `/contrac
 
 | Escenario | Comportamiento |
 |---|---|
-| **Falla Detection Service** | El mensaje `cmd.face_detection` permanece en Kafka. Al reiniciar, lo relee y reintenta. La solicitud en BD queda en estado `INICIADO`. |
-| **Falla Age Service** | El mensaje `cmd.age_detection` permanece en Kafka. Los crops siguen en MinIO. Al reiniciar, reclasifica desde el principio. |
-| **Falla Orchestrator-3** | El mensaje `evt.age_detection.completed` permanece en Kafka. Al reiniciar, repite la decisión menores/no menores. |
-| **Falla Pixelation Service** | El mensaje `cmd.pixelation` o `cmd.storage` permanece en Kafka. Al reiniciar, regenera las imágenes (la subida a MinIO es idempotente por clave fija). |
-| **Falla MinIO** | El servicio captura la excepción en el `try/except` del loop. El offset Kafka no avanza, por lo que el mensaje se reentrega al reiniciar. |
-| **Falla PostgreSQL** | Igual que MinIO: excepción capturada, offset no avanzado, reintento automático. |
+| **Falla Detection Service** | El mensaje `cmd.face_detection` no se confirma en Kafka. Al reiniciar, lo relee y reintenta. |
+| **Falla Age Service** | El mensaje `cmd.age_detection` no se confirma. Los crops siguen en MinIO. Al reiniciar, reclasifica desde el principio. |
+| **Falla Orchestrator-3** | El mensaje `evt.age_detection.completed` no se confirma. Al reiniciar, repite la decisión menores/no menores. |
+| **Falla Pixelation Service** | El mensaje `cmd.pixelation` o `cmd.storage` no se confirma. Al reiniciar, regenera las imágenes (la subida a MinIO es idempotente por clave fija). |
+| **Falla MinIO** | La excepción es capturada en el loop. El offset Kafka no se confirma, el mensaje se reentrega al reiniciar. La solicitud se marca como `ERROR` en BD. |
+| **Falla PostgreSQL** | Igual que MinIO: excepción capturada, offset no confirmado, solicitud marcada como `ERROR`. |
 
 ### Estrategias de manejo implementadas
 
-**Reintentos automáticos por Kafka:**
-Todos los consumers usan `auto.offset.reset=earliest` y grupos de consumo dedicados (`face-group`, `orch-2-group`, etc.). Si un servicio falla sin confirmar el mensaje, Kafka lo reentrega al reiniciar. La entrega es *at-least-once*.
+**Commit manual del offset Kafka:**
+Todos los consumers tienen desactivado el auto-commit (`enable.auto.commit=false`). Por defecto, Kafka confirma automáticamente los mensajes cada 5 segundos, independientemente de si el procesamiento terminó bien o no. Esto significa que si un servicio falla a mitad del trabajo, Kafka marca el mensaje como procesado y se pierde. Con el commit manual, el offset solo avanza cuando todo el procesamiento ha terminado con éxito.
+
+**Entrega at-least-once:**
+Como consecuencia del commit manual, si un servicio cae justo después de procesar pero antes de confirmar el offset, el mensaje se reentregará al reiniciar. Todos los servicios están diseñados para tolerar este escenario: las claves de MinIO son deterministas (se sobreescriben sin problema) y las actualizaciones de BD son idempotentes.
+
+**Marcado de estado `ERROR`:**
+Cuando un consumer captura una excepción irrecuperable, marca la solicitud como `ERROR` en BD y confirma el offset. Esto evita que el sistema quede en un bucle infinito reprocesando un mensaje que nunca podrá completarse (por ejemplo, una imagen corrupta). El estado `ERROR` es visible en el frontend y en la API de consulta.
+
+**Graceful shutdown:**
+Cada consumer registra handlers para las señales `SIGTERM` y `SIGINT`. Cuando Docker para un contenedor, envía primero `SIGTERM` (por favor para). Si el proceso lo ignora, Docker espera 10 segundos y envía `SIGKILL` (para ahora sí o sí), matando el proceso a la fuerza y posiblemente en medio de una operación. Con el handler implementado, la señal cambia un flag `running = False` que para el bucle al terminar la iteración actual, permitiendo cerrar la conexión con Kafka limpiamente.
 
 **Aislamiento de errores por cara:**
 En Age Service y Orchestrator-2, los errores en el procesamiento de una cara individual son capturados y logueados sin interrumpir el procesamiento de las demás caras del mismo mensaje.
 
 **Idempotencia en MinIO:**
-Las claves de las imágenes de salida son deterministas (`{guid}/marcos.jpg`, `{guid}/terminada.jpg`). Si se reprocesa una solicitud, las imágenes se sobreescriben sin efectos secundarios.
+Las claves de las imágenes de salida son deterministas (`{guid}/marcos.jpg`, `{guid}/terminada.jpg`, `{guid}/faces/{id}.jpg`). Si se reprocesa una solicitud, las imágenes se sobreescriben sin efectos secundarios.
 
-**Creación automática de buckets:**
-`api-1` crea `images-raw` al arrancar. `pixelation-service` crea `images-processed` al arrancar. El sistema no falla si los buckets ya existen.
+**Validación de variables de entorno al arranque:**
+Todos los servicios comprueban al iniciar que las variables de entorno requeridas están presentes y terminan con un mensaje de error claro si falta alguna. Esto evita que un servicio arranque y falle con un error críptico de conexión en el primer mensaje que intenta procesar.
 
 ### Limitaciones conocidas
 
-- **Sin dead-letter queue (DLQ):** Los mensajes sistemáticamente inprocesables (imagen corrupta, formato inesperado) no se apartan a un topic de errores. El consumer podría quedarse atascado en ellos.
+- **Sin dead-letter queue (DLQ):** Los mensajes sistemáticamente inprocesables se marcan como `ERROR` en BD y su offset se confirma, pero no se guardan en un topic de errores separado para análisis posterior.
 - **Sin backoff exponencial:** Un fallo de BD o MinIO provoca reintento inmediato en el siguiente ciclo del loop, sin espera progresiva.
 - **Consistencia eventual:** El estado en BD puede quedar parcialmente actualizado si un servicio falla a mitad del procesamiento de un mensaje con múltiples caras.
+
+---
+
+## Decisiones de diseño
+
+### Validación por magic bytes
+
+Los formatos de imagen se validan leyendo los primeros bytes del fichero, no la extensión. La extensión puede ser falsa (un fichero `.jpg` puede contener cualquier cosa), pero los primeros bytes de un fichero son su firma real: un JPEG siempre empieza por `FF D8 FF`, un PNG por `89 50 4E 47`, etc. Esta validación se realiza tanto en el backend (API-1) como en el frontend antes de enviar.
+
+### Orden de operaciones en API-1: MinIO → BD → Kafka
+
+El orden importa porque cada paso puede fallar:
+
+- Si MinIO falla primero: no hay registro en BD, estado limpio.
+- Si BD falla después de MinIO: hay un fichero huérfano en MinIO sin referencia, pero nada visible para el usuario.
+- Si Kafka falla después de BD: se hace rollback del registro en BD. El fichero queda en MinIO sin referencia (limpieza manual si fuera necesario), pero el usuario recibe un error claro y puede reintentar.
+
+El orden inverso (BD → MinIO → Kafka, que era el original) dejaba registros en BD apuntando a ficheros que no existían si MinIO fallaba.
+
+### Orden de operaciones en consumers: Kafka → BD
+
+En todos los servicios que consumen y producen eventos, la publicación en Kafka se hace antes de actualizar la BD. El motivo es que Kafka es el mecanismo de progreso del sistema: si el downstream no recibe el evento, el flujo se detiene independientemente de lo que diga la BD. Si la BD falla después de publicar en Kafka, el siguiente servicio ya tiene el mensaje y el sistema sigue avanzando; la actualización de la BD es solo una métrica de tiempo que puede perderse sin consecuencias graves.
+
+### Umbral 0.45 en lugar de 0.50 para clasificación de menores
+
+El modelo devuelve un score entre 0 y 1 donde 1 = menor. El umbral estándar sería 0.50, pero se usa 0.45 para ser más conservadores: es preferible pixelar algún adulto por error (falso positivo) que dejar sin pixelar a un menor (falso negativo). La diferencia en falsos positivos a este umbral es mínima según las métricas de validación del modelo.
+
+### Presigned URLs en lugar de proxy por el backend
+
+Las imágenes no se sirven pasando por API-2. En cambio, API-2 genera URLs firmadas temporalmente que el navegador usa para descargar directamente de MinIO. Esto evita que el backend sea un cuello de botella en la transferencia de ficheros grandes y reduce el consumo de memoria del servidor.
