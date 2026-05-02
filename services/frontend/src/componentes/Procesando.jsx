@@ -17,7 +17,7 @@ export default function Procesando({ guid, onCompletar, onError }) {
 
       try {
         const datos = await consultarResultado(guid)
-        if (datos.estado === 'COMPLETADO') {
+        if (datos.estado === 'COMPLETADA') {
           clearInterval(intervalo)
           onCompletar(datos)
         } else if (datos.estado === 'ERROR') {

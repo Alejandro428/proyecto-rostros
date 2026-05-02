@@ -268,7 +268,7 @@ export default function ZonaSubida({ onSubir, onBuscar }) {
       </button>
 
       {mostrarLista && (
-        <div className={cerrandoLista ? 'lista-cerrando' : ''}>
+        <div className={`lista-wrapper${cerrandoLista ? ' lista-cerrando' : ''}`}>
           <ListaSolicitudes onSeleccionar={(guid) => { setMostrarLista(false); onBuscar(guid) }} />
         </div>
       )}
