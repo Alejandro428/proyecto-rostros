@@ -7,32 +7,69 @@ Sistema distribuido orientado a eventos para detectar rostros en imágenes, clas
 ## Índice
 
 1. [Requisitos previos](#requisitos-previos)
-2. [Cómo ejecutar el sistema](#cómo-ejecutar-el-sistema)
-3. [Estructura del proyecto](#estructura-del-proyecto)
-4. [Descripción de cada servicio](#descripción-de-cada-servicio)
-5. [Topics y flujo de eventos](#topics-y-flujo-de-eventos)
-6. [Documentación funcional](#documentación-funcional)
-7. [Gestión de errores](#gestión-de-errores)
-8. [Decisiones de diseño](#decisiones-de-diseño)
+2. [Instalación en una máquina nueva](#instalación-en-una-máquina-nueva)
+3. [Cómo ejecutar el sistema](#cómo-ejecutar-el-sistema)
+4. [Estructura del proyecto](#estructura-del-proyecto)
+5. [Descripción de cada servicio](#descripción-de-cada-servicio)
+6. [Topics y flujo de eventos](#topics-y-flujo-de-eventos)
+7. [Documentación funcional](#documentación-funcional)
+8. [Gestión de errores](#gestión-de-errores)
+9. [Decisiones de diseño](#decisiones-de-diseño)
+10. [Solución de problemas frecuentes](#solución-de-problemas-frecuentes)
 
 ---
 
 ## Requisitos previos
 
-- Docker Desktop (con WSL2 en Windows)
-- Docker Compose v2
-- Git + **Git LFS** (necesario para descargar el modelo al clonar)
-- Archivo `.env` en la raíz del proyecto (ver sección siguiente)
+- **Docker Desktop 4.x** con el backend WSL2 activado (Windows) o Docker Engine (Linux/Mac)
+- **Git** con la extensión **Git LFS** instalada
+- Los puertos `3000`, `8000`, `8001`, `9000`, `9092` y `5432` libres en la máquina host
 
-### Instalar Git LFS
+### Recursos mínimos recomendados
+
+El sistema corre varios modelos de visión por computadora en CPU. Con menos de estos recursos los contenedores pueden morir por OOM o tardar en exceso:
+
+| Recurso | Mínimo |
+|---|---|
+| RAM asignada a Docker / WSL2 | 6 GB |
+| CPU | 4 núcleos |
+| Espacio en disco | 10 GB libres |
+
+En Windows, la RAM que Docker puede usar se configura en **Docker Desktop → Settings → Resources → Memory**. Si usas WSL2 también puedes crear `%USERPROFILE%\.wslconfig` con:
+```ini
+[wsl2]
+memory=6GB
+```
+
+---
+
+## Instalación en una máquina nueva
+
+Pasos en el orden exacto — saltarse el paso 1 hace que el modelo no se descargue al clonar.
+
+### Paso 1 — Instalar Git LFS (antes de clonar)
 
 ```bash
 git lfs install
 ```
 
-### Archivo `.env`
+Verifica que funciona:
+```bash
+git lfs version   # debe imprimir algo como "git-lfs/3.x.x"
+```
 
-Crea un fichero `.env` en la raíz con las siguientes variables:
+### Paso 2 — Clonar el repositorio
+
+```bash
+git clone https://github.com/Alejandro428/proyecto-rostros.git
+cd proyecto-rostros
+```
+
+Git LFS descarga automáticamente el modelo de clasificación de edad (~95 MB). Si ves un fichero `modelo_menores.h5` de solo unos pocos KB, es un puntero LFS — ejecuta `git lfs pull` para obtener el binario real.
+
+### Paso 3 — Crear el archivo `.env`
+
+Copia el bloque siguiente tal cual en un fichero llamado `.env` en la raíz del proyecto. Los valores funcionan para desarrollo local sin ningún cambio:
 
 ```env
 KAFKA_SERVER=kafka:9092
@@ -51,7 +88,48 @@ MAX_FILE_SIZE=10485760
 PYTHONUNBUFFERED=1
 ```
 
-Todos los servicios validan al arranque que estas variables estén presentes. Si falta alguna, el contenedor termina inmediatamente con un mensaje de error claro en lugar de fallar más tarde con un error críptico de conexión.
+Todos los servicios validan al arranque que estas variables estén presentes. Si falta alguna, el contenedor termina inmediatamente con un mensaje de error claro en lugar de fallar con un error críptico de conexión.
+
+### Paso 4 — Construir y arrancar
+
+```bash
+docker compose up -d --build
+```
+
+**El primer arranque tarda entre 10 y 20 minutos** porque Docker tiene que:
+- Descargar las imágenes base de Python, Kafka y PostgreSQL
+- Instalar las dependencias Python de cada servicio (insightface, tensorflow, etc.)
+- Descargar el modelo de detección `buffalo_l` de insightface (~200 MB, solo en detection-service, la primera vez que arranca)
+
+Los arranques siguientes son inmediatos si no hay cambios en el código.
+
+### Paso 5 — Verificar
+
+```bash
+docker compose ps
+```
+
+Estado esperado:
+
+| Contenedor | Estado |
+|---|---|
+| postgres | running |
+| minio | running |
+| kafka | running |
+| kafka-init | exited (0) |
+| api-1 | running |
+| api-2 | running |
+| detection-service | running |
+| orchestrator-2 | running |
+| age-service | running |
+| orchestrator-3 | running |
+| pixelation-service | running |
+| frontend | running |
+| frontend-builder | exited (0) |
+
+`kafka-init` y `frontend-builder` con `exited (0)` es correcto: son contenedores de inicialización que terminan solos cuando su trabajo está hecho.
+
+Abre [http://localhost:3000](http://localhost:3000) — si ves la interfaz, el sistema está listo.
 
 ---
 
@@ -511,3 +589,61 @@ El modelo devuelve un score entre 0 y 1 donde 1 = menor. El umbral estándar ser
 ### Presigned URLs en lugar de proxy por el backend
 
 Las imágenes no se sirven pasando por API-2. En cambio, API-2 genera URLs firmadas temporalmente que el navegador usa para descargar directamente de MinIO. Esto evita que el backend sea un cuello de botella en la transferencia de ficheros grandes y reduce el consumo de memoria del servidor.
+
+---
+
+## Solución de problemas frecuentes
+
+### El build falla con "failed to prepare extraction snapshot" o errores de capas
+
+Error típico de corrupción de la caché de BuildKit en WSL2. Solución:
+
+```bash
+docker builder prune -f
+docker compose up -d --build
+```
+
+### El frontend no carga o sale en blanco
+
+El build del frontend lo hace el contenedor `frontend-builder`. Comprueba si terminó con error:
+
+```bash
+docker compose logs frontend-builder
+```
+
+Si hay errores de npm, normalmente se resuelven repitiendo el build. Si el error es de red (timeout descargando paquetes), es un problema de MTU de WSL2 — espera y reintenta.
+
+### Un servicio aparece como "restarting" en lugar de "running"
+
+```bash
+docker compose logs <nombre-del-servicio>
+```
+
+Las causas más comunes son:
+- **Variable de entorno faltante**: el log mostrará `ERROR: variable de entorno requerida no configurada: X`. Verifica que el fichero `.env` existe y tiene todas las variables del bloque de instalación.
+- **Puerto ocupado**: otro proceso usa el puerto. Ciérralo o cambia el mapeo en `docker-compose.yml`.
+- **Poca memoria**: Docker mata el contenedor por OOM. Aumenta la RAM asignada (ver sección de requisitos).
+
+### detection-service tarda mucho en arrancar la primera vez
+
+Normal. Al arrancar por primera vez descarga el modelo `buffalo_l` de insightface (~200 MB). El servicio no empezará a consumir mensajes Kafka hasta que la descarga termine. Las siguientes veces arranca en segundos porque el modelo queda en un volumen Docker.
+
+### La imagen se sube pero el análisis nunca termina (queda en "procesando")
+
+1. Comprueba que todos los consumers están en running: `docker compose ps`
+2. Mira los logs del servicio que debería estar procesando:
+   ```bash
+   docker compose logs detection-service
+   docker compose logs orchestrator-2
+   docker compose logs age-service
+   ```
+3. Si algún contenedor está en `restarting`, aplica el punto anterior.
+
+### Quiero empezar de cero (borrar todos los datos)
+
+```bash
+docker compose down -v
+docker compose up -d --build
+```
+
+`-v` elimina los volúmenes de PostgreSQL, MinIO y Kafka. El siguiente arranque parte de una base de datos vacía.
