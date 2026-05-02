@@ -917,17 +917,25 @@ body {
 }
 
 .boton-refrescar {
-  background: none;
-  border: none;
-  color: #2563eb;
-  font-size: 0.82rem;
-  font-weight: 500;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  font-size: 1rem;
+  line-height: 1;
   cursor: pointer;
-  padding: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, transform 0.2s;
 }
 
 .boton-refrescar:hover {
-  text-decoration: underline;
+  background: #e2e8f0;
+  color: #2563eb;
+  transform: rotate(180deg);
 }
 
 /* ─── Galería de solicitudes ─── */
@@ -1020,23 +1028,32 @@ body {
 .tarjeta-caras {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.78rem;
-  color: #475569;
-  font-weight: 500;
+  gap: 0.3rem;
 }
 
-.tarjeta-menores {
-  background: #fee2e2;
-  color: #dc2626;
-  padding: 0.1rem 0.4rem;
+.tarjeta-badge-caras {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  padding: 0.15rem 0.45rem;
   border-radius: 20px;
-  font-size: 0.7rem;
+}
+
+.tarjeta-badge-menores {
+  font-size: 0.72rem;
   font-weight: 700;
+  color: #dc2626;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  padding: 0.15rem 0.45rem;
+  border-radius: 20px;
 }
 
 .tarjeta-sin-caras {
-  color: #94a3b8;
+  font-size: 0.78rem;
+  color: #cbd5e1;
   font-weight: 400;
 }
 

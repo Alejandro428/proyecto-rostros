@@ -52,7 +52,7 @@ export default function ListaSolicitudes({ onSeleccionar }) {
     <div className="lista-solicitudes">
       <div className="lista-cabecera">
         <span className="lista-total">{solicitudes.length} solicitud{solicitudes.length !== 1 ? 'es' : ''}</span>
-        <button className="boton-refrescar" onClick={cargar}>Actualizar</button>
+        <button className="boton-refrescar" onClick={cargar} title="Actualizar">↻</button>
       </div>
 
       <div className="galeria-solicitudes">
@@ -77,12 +77,12 @@ export default function ListaSolicitudes({ onSeleccionar }) {
               <div className="tarjeta-caras">
                 {s.total_caras > 0
                   ? <>
-                      <span>{s.total_caras} cara{s.total_caras !== 1 ? 's' : ''}</span>
+                      <span className="tarjeta-badge-caras">{s.total_caras} 👤</span>
                       {s.total_menores > 0 &&
-                        <span className="tarjeta-menores">{s.total_menores} menor{s.total_menores !== 1 ? 'es' : ''}</span>
+                        <span className="tarjeta-badge-menores">{s.total_menores} ⚠</span>
                       }
                     </>
-                  : <span className="tarjeta-sin-caras">sin caras</span>
+                  : <span className="tarjeta-sin-caras">—</span>
                 }
               </div>
             </div>
