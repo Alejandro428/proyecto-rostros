@@ -97,4 +97,4 @@ async def upload_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail="Error al encolar el procesamiento")
 
     logger.info(f"Upload completado: {guid_solicitud}")
-    return {"GUID_Solicitud": guid_solicitud, "Id_Imagen": id_imagen, "status": "INICIADO"}
+    return {"GUID_Solicitud": guid_solicitud, "Id_Imagen": id_imagen, "status": "CREADA"}

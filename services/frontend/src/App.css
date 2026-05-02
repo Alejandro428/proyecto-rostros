@@ -1338,8 +1338,8 @@ html.dark .cara-info             { background: #1e293b; }
 html.dark .crop-imagen           { background: #283548; }
 html.dark .badge-menor           { background: #450a0a; color: #f87171; }
 html.dark .badge-adulto          { background: #052e16; color: #4ade80; }
-html.dark .cara-score            { color: #64748b; }
-html.dark .cara-id               { color: #475569; }
+html.dark .cara-score            { color: #94a3b8; }
+html.dark .cara-id               { color: #64748b; }
 
 html.dark .tarjeta-solicitud     { background: #1e293b; border-color: #334155; }
 html.dark .tarjeta-solicitud:hover { border-color: #3b82f6; box-shadow: 0 6px 18px rgba(59,130,246,0.2); }
@@ -1362,6 +1362,27 @@ html.dark .paso    { background: #283548; border-color: #334155; color: #94a3b8;
 
 html.dark .toast { background: #f1f5f9; color: #0f172a; }
 html.dark .toast-icono { color: #16a34a; }
+
+/* Textos secundarios que no heredan bien en modo oscuro */
+html.dark .tiempo-etiqueta          { color: #cbd5e1; }
+html.dark .tiempo-valor             { color: #cbd5e1; }
+html.dark .seccion-tiempos h3       { color: #64748b; }
+html.dark .estadistica-etiqueta     { color: #94a3b8; }
+html.dark .seccion-caras h3         { color: #e2e8f0; }
+html.dark .aviso-sin-caras,
+html.dark .aviso-sin-menores        { color: #94a3b8; }
+html.dark .pantalla-procesando p    { color: #94a3b8; }
+html.dark .texto-secundario         { color: #94a3b8; }
+html.dark .tamano-archivo           { color: #94a3b8; }
+html.dark .cambiar-archivo          { color: #64748b; }
+html.dark .etiqueta-formatos        { color: #94a3b8; }
+html.dark .limite-tamano            { color: #64748b; }
+html.dark .separador                { color: #475569; }
+html.dark .sugerencia-fecha         { color: #64748b; }
+html.dark .tarjeta-fecha            { color: #64748b; }
+html.dark .lista-cargando,
+html.dark .lista-vacia              { color: #64748b; }
+html.dark .stat-etiqueta            { color: #64748b; }
 
 html.dark .estado-completada,
 html.dark .estado-completado   { background: #14532d; color: #4ade80; }

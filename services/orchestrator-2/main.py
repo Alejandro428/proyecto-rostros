@@ -55,25 +55,28 @@ while running:
 
         # 2. Cropear cada cara, insertar en BD y subir a MinIO
         for face in faces:
-            bbox = face["bbox"]
-            x, y, w, h = bbox["x"], bbox["y"], bbox["w"], bbox["h"]
+            try:
+                bbox = face["bbox"]
+                x, y, w, h = bbox["x"], bbox["y"], bbox["w"], bbox["h"]
 
-            crop = img[y:y+h, x:x+w]
-            if crop.size == 0:
-                logger.warning(f"Crop vacío para face {face['face_id']}, ignorando")
-                continue
+                crop = img[y:y+h, x:x+w]
+                if crop.size == 0:
+                    logger.warning(f"Crop vacío para face {face['face_id']}, ignorando")
+                    continue
 
-            id_cara     = db_service.insert_cara(guid, x, y, w, h)
-            s3_key_cara = f"{guid}/faces/{id_cara}.jpg"
+                id_cara     = db_service.insert_cara(guid, x, y, w, h)
+                s3_key_cara = f"{guid}/faces/{id_cara}.jpg"
 
-            storage_service.upload_crop(crop, s3_key_cara)
-            db_service.update_url_cara(guid, id_cara, s3_key_cara)
+                storage_service.upload_crop(crop, s3_key_cara)
+                db_service.update_url_cara(guid, id_cara, s3_key_cara)
 
-            faces_payload.append({
-                "face_id":     id_cara,
-                "bbox":        bbox,
-                "s3_key_cara": s3_key_cara
-            })
+                faces_payload.append({
+                    "face_id":     id_cara,
+                    "bbox":        bbox,
+                    "s3_key_cara": s3_key_cara
+                })
+            except Exception as e:
+                logger.error(f"[ERROR face_id={face.get('face_id')}] {e}")
 
         # 3. Decidir siguiente paso — Kafka primero, luego BD
         if faces_payload:
