@@ -6,7 +6,7 @@ const TAMANO_MAXIMO_MB = 10
 const TAMANO_MAXIMO_BYTES = TAMANO_MAXIMO_MB * 1024 * 1024
 
 const MAGIC = [
-  { bytes: [0xFF, 0xD8, 0xFF],       tipo: 'JPEG' },
+  { bytes: [0xFF, 0xD8, 0xFF], tipo: 'JPEG' },
   { bytes: [0x89, 0x50, 0x4E, 0x47], tipo: 'PNG'  },
 ]
 
@@ -33,6 +33,7 @@ function formatearFecha(iso) {
 
 export default function ZonaSubida({ onSubir, onBuscar }) {
   const [archivoSeleccionado, setArchivoSeleccionado] = useState(null)
+  const [previewUrl, setPreviewUrl] = useState(null)
   const [arrastrando, setArrastrando] = useState(false)
   const [subiendo, setSubiendo] = useState(false)
   const [error, setError] = useState(null)
@@ -48,12 +49,16 @@ export default function ZonaSubida({ onSubir, onBuscar }) {
   const inputRef = useRef(null)
   const blurTimeoutRef = useRef(null)
   const yaCargoRef = useRef(false)
+  const previewRef = useRef(null)
 
   useEffect(() => {
     listarSolicitudes(5)
       .then(d => setRecientes(d.solicitudes))
       .catch(() => {})
-    return () => clearTimeout(blurTimeoutRef.current)
+    return () => {
+      clearTimeout(blurTimeoutRef.current)
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current)
+    }
   }, [])
 
   const cargarTodasSolicitudes = async () => {
@@ -85,12 +90,16 @@ export default function ZonaSubida({ onSubir, onBuscar }) {
     }
     const tipo = await detectarTipoReal(archivo)
     if (!tipo) {
-      setError('El archivo no es una imagen válida (JPEG, PNG, BMP o GIF)')
+      setError('El archivo no es una imagen válida (JPEG o PNG)')
       setArchivoSeleccionado(null)
       return
     }
     setError(null)
     setArchivoSeleccionado(archivo)
+    if (previewRef.current) URL.revokeObjectURL(previewRef.current)
+    const url = URL.createObjectURL(archivo)
+    previewRef.current = url
+    setPreviewUrl(url)
   }
 
   const alSoltarArchivo = async (e) => {
@@ -141,7 +150,11 @@ export default function ZonaSubida({ onSubir, onBuscar }) {
         />
         {archivoSeleccionado ? (
           <div className="archivo-info">
-            <span className="icono-archivo">🖼️</span>
+            {previewUrl && (
+              <div className="preview-container">
+                <img src={previewUrl} alt="Vista previa" className="preview-imagen" />
+              </div>
+            )}
             <p className="nombre-archivo">{archivoSeleccionado.name}</p>
             <p className="tamano-archivo">{tamanoLegible(archivoSeleccionado.size)}</p>
             <p className="cambiar-archivo">Haz clic para cambiar</p>

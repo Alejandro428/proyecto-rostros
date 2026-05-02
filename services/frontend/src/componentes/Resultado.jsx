@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import TarjetaCara from './TarjetaCara'
 
 function fmt(iso) {
@@ -21,17 +21,30 @@ export default function Resultado({ datos, guid, onReiniciar }) {
   const [imagenActiva, setImagenActiva] = useState(
     datos.imagenes?.marcos ? 'marcos' : datos.imagenes?.terminada ? 'terminada' : 'original'
   )
+  const [sliderPos, setSliderPos] = useState(50)
+  const [verMarcos, setVerMarcos] = useState(false)
+  const sliderRef = useRef(null)
+  const arrastrando = useRef(false)
 
   const totalCaras = datos.caras_detectadas
   const totalMenores = datos.caras.filter(c => c.es_menor).length
   const hayMenores = totalMenores > 0
   const hayCaras = totalCaras > 0
 
+  const tieneSlider = Boolean(datos.imagenes?.original && datos.imagenes?.terminada)
+
   const imagenesDisponibles = [
     datos.imagenes.marcos && { clave: 'marcos', etiqueta: 'Con marcos', url: datos.imagenes.marcos },
     datos.imagenes.terminada && { clave: 'terminada', etiqueta: 'Pixelada', url: datos.imagenes.terminada },
     datos.imagenes.original && { clave: 'original', etiqueta: 'Original', url: datos.imagenes.original },
   ].filter(Boolean)
+
+  const moverSlider = (clientX) => {
+    if (!arrastrando.current || !sliderRef.current) return
+    const rect = sliderRef.current.getBoundingClientRect()
+    const x = Math.max(0, Math.min(clientX - rect.left, rect.width))
+    setSliderPos((x / rect.width) * 100)
+  }
 
   return (
     <div className="pantalla-resultado">
@@ -72,7 +85,60 @@ export default function Resultado({ datos, guid, onReiniciar }) {
         )}
       </div>
 
-      {imagenesDisponibles.length > 0 && (
+      {tieneSlider ? (
+        <div className="seccion-imagenes">
+          <div
+            ref={sliderRef}
+            className="slider-comparacion"
+            onMouseMove={e => moverSlider(e.clientX)}
+            onMouseUp={() => { arrastrando.current = false }}
+            onMouseLeave={() => { arrastrando.current = false }}
+            onTouchMove={e => moverSlider(e.touches[0].clientX)}
+            onTouchEnd={() => { arrastrando.current = false }}
+          >
+            <img src={datos.imagenes.original} alt="Original" className="slider-img-base" />
+            <img
+              src={datos.imagenes.terminada}
+              alt="Pixelada"
+              className="slider-img-overlay"
+              style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}
+            />
+            <div
+              className="slider-handle"
+              style={{ left: `${sliderPos}%` }}
+              onMouseDown={() => { arrastrando.current = true }}
+              onTouchStart={() => { arrastrando.current = true }}
+            >
+              <div className="slider-handle-circulo">◀▶</div>
+            </div>
+            <div className="slider-etiquetas">
+              <span>Original</span>
+              <span>Pixelada</span>
+            </div>
+          </div>
+          {datos.imagenes.marcos && (
+            <>
+              <div className="pestanas">
+                <button
+                  className={`pestana ${verMarcos ? 'activa' : ''}`}
+                  onClick={() => setVerMarcos(v => !v)}
+                >
+                  {verMarcos ? 'Ocultar detecciones' : 'Ver con marcos'}
+                </button>
+              </div>
+              {verMarcos && (
+                <div className="contenedor-imagen">
+                  <img
+                    src={datos.imagenes.marcos}
+                    alt="Con marcos"
+                    className="imagen-resultado imagen-activa"
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      ) : imagenesDisponibles.length > 0 ? (
         <div className="seccion-imagenes">
           <div className="pestanas">
             {imagenesDisponibles.map(({ clave, etiqueta }) => (
@@ -96,7 +162,7 @@ export default function Resultado({ datos, guid, onReiniciar }) {
             ))}
           </div>
         </div>
-      )}
+      ) : null}
 
       {hayCaras && (
         <div className="seccion-caras">
