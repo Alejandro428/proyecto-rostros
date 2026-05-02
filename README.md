@@ -88,7 +88,7 @@ Todos los servicios deben estar en estado `running`. El contenedor `kafka-init` 
 
 También puedes usar la API directamente:
 
-**Formatos de imagen compatibles:** `JPEG`, `PNG`, `BMP`, `GIF` — tamaño máximo **10 MB**
+**Formatos de imagen compatibles:** `JPEG`, `PNG` — tamaño máximo **10 MB**
 
 **Subir una imagen:**
 ```bash
@@ -177,13 +177,15 @@ proyecto_rostros/
 Interfaz web construida con React + Vite y servida por Nginx. Construida mediante un servicio `frontend-builder` en Docker Compose — este patrón es necesario porque `docker build` en WSL2 falla al descargar paquetes npm por limitaciones de MTU de red; ejecutar el build como un contenedor independiente evita ese problema.
 
 **Funcionalidades:**
-- Subida de imagen por arrastrar y soltar o selector de fichero
+- Subida de imagen por arrastrar y soltar o selector de fichero, con vista previa antes de enviar
 - Validación de formato por magic bytes (contenido real del fichero, no solo extensión)
 - Pantalla de procesamiento con polling automático hasta obtener resultado
-- Visualización de resultado: imagen original, con marcos de color y pixelada
-- Galería de caras individuales con clasificación y score de la red neuronal
-- Búsqueda con autocompletado sobre el historial de solicitudes
-- Historial completo con miniaturas de imagen
+- Notificación automática (toast) al completarse el análisis
+- Visualización de resultado: tres pestañas — imagen pixelada, con marcos de detección y original
+- Galería de caras individuales con clasificación (MENOR/ADULTO), score y borde de color
+- Estadísticas globales en la cabecera: total de imágenes procesadas, caras detectadas y menores
+- Historial con miniaturas, filtros por estado (Completadas / En proceso / Error) y búsqueda por ID con autocompletado
+- Modo oscuro con persistencia en localStorage
 - Timestamps en zona horaria Europe/Madrid
 
 ---
@@ -200,7 +202,7 @@ Punto de entrada del sistema. Fusiona el rol de Orquestador-1.
 - Devuelve el `GUID_Solicitud` al cliente
 
 **Endpoints:**
-- `POST /upload` — sube una imagen e inicia el pipeline. Formatos aceptados: `jpg`, `jpeg`, `png`, `bmp`, `gif`. Tamaño máximo: 10 MB.
+- `POST /upload` — sube una imagen e inicia el pipeline. Formatos aceptados: `jpg`, `jpeg`, `png`. Tamaño máximo: 10 MB.
 - `GET /health` — comprobación de salud
 
 **Orden de operaciones:** MinIO → PostgreSQL → Kafka. Este orden es deliberado: si MinIO falla no se crea registro en BD; si Kafka falla se hace rollback del registro en BD. Así nunca queda una solicitud registrada que el sistema no pueda procesar.
