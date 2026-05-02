@@ -19,7 +19,7 @@ EPOCHS_F1  = 20        # fase 1: base congelada
 EPOCHS_FT  = 15        # fase 2: fine-tuning
 LR         = 0.001
 SEED       = 123
-THRESHOLD  = 0.40      # score >= THRESHOLD → MENOR
+THRESHOLD  = 0.45      # score >= THRESHOLD → MENOR
 
 _DIR        = os.path.dirname(os.path.abspath(__file__))
 SRC_PATH    = os.path.join(_DIR, "..", "face_age")
@@ -102,8 +102,10 @@ print(f"score >= {THRESHOLD}  →  MENOR\n")
 
 data_augmentation = tf.keras.Sequential([
     layers.RandomFlip("horizontal"),
-    layers.RandomRotation(0.1),
-    layers.RandomZoom(0.1),
+    layers.RandomRotation(0.15),
+    layers.RandomZoom(0.15),
+    layers.RandomBrightness(0.2),
+    layers.RandomContrast(0.2),
 ])
 
 def augmentar(image, label):
@@ -135,7 +137,7 @@ def build_model():
     x       = base_model(inputs, training=False)
     x       = layers.GlobalAveragePooling2D()(x)
     x       = layers.Dense(64, activation="relu")(x)
-    x       = layers.Dropout(0.3)(x)
+    x       = layers.Dropout(0.5)(x)
     x       = layers.Dense(32, activation="relu")(x)
     outputs = layers.Dense(1, activation="sigmoid")(x)
 

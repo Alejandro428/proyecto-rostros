@@ -82,7 +82,11 @@ Todos los servicios deben estar en estado `running`. El contenedor `kafka-init` 
 
 ### 4. Probar el sistema
 
-**Formatos de imagen compatibles:** `jpg`, `jpeg`, `png`, `bmp`, `gif` — tamaño máximo **10 MB**
+**Interfaz web:** abre [http://localhost:3000](http://localhost:3000) en el navegador.
+
+También puedes usar la API directamente:
+
+**Formatos de imagen compatibles:** `JPEG`, `PNG`, `BMP`, `GIF` (validados por magic bytes) — tamaño máximo **10 MB**
 
 **Subir una imagen:**
 ```bash
@@ -103,6 +107,11 @@ curl http://localhost:8001/resultado/abc-123
 **Consultar una cara concreta:**
 ```bash
 curl http://localhost:8001/resultado/abc-123/cara/2
+```
+
+**Listar todas las solicitudes:**
+```bash
+curl http://localhost:8001/solicitudes?limite=20
 ```
 
 ### 5. Detener el sistema
@@ -153,19 +162,36 @@ proyecto_rostros/
     ├── age-service/          # Clasificación de edad con red neuronal
     ├── orchestrator-3/       # Orquestación post-clasificación
     ├── pixelation-service/   # Pixelado y generación de imágenes (fusiona Orquestador-4)
-    └── api-2/                # Consulta de resultados
+    ├── api-2/                # Consulta de resultados
+    └── frontend/             # Interfaz web (React + Vite, servida por Nginx)
 ```
 
 ---
 
 ## Descripción de cada servicio
 
+### Frontend (puerto 3000)
+
+Interfaz web construida con React + Vite y servida por Nginx. Construida mediante un servicio `frontend-builder` en Docker Compose (patrón necesario por limitaciones MTU de WSL2 con `docker build`).
+
+**Funcionalidades:**
+- Subida de imagen por arrastrar y soltar o selector de fichero
+- Validación de formato por magic bytes (contenido real, no solo extensión)
+- Pantalla de procesamiento con polling automático
+- Visualización de resultado: imagen original, con marcos de color y pixelada
+- Galería de caras individuales con clasificación y score de la red neuronal
+- Búsqueda con autocompletado sobre el historial de solicitudes
+- Historial completo con miniaturas de imagen
+- Timestamps en zona horaria Europe/Madrid
+
+---
+
 ### API-1 — Ingesta (puerto 8000)
 
 Punto de entrada del sistema. Fusiona el rol de Orquestador-1.
 
 **Responsabilidades:**
-- Valida el fichero recibido (extensión y tamaño máximo)
+- Valida el fichero recibido por magic bytes y tamaño máximo
 - Sube la imagen original al bucket `images-raw` de MinIO
 - Registra la solicitud en PostgreSQL con estado `INICIADO`
 - Publica `images.raw` y `cmd.face_detection` en Kafka
@@ -211,11 +237,11 @@ Clasifica si cada cara corresponde a un menor mediante una CNN entrenada.
 **Responsabilidades:**
 - Consume `cmd.age_detection`
 - Descarga cada crop de MinIO
-- Aplica el modelo `modelo_menores.h5` con umbral `score >= 0.40 → MENOR`
+- Aplica el modelo `modelo_menores.h5` con umbral `score >= 0.45 → MENOR`
 - Actualiza `Mayor_18` y `Escore` en BD por cada cara
 - Publica `evt.age_detection.completed` con `score` y `es_menor` por cara
 
-**Modelo:** ResNet50 con fine-tuning entrenado sobre el dataset `face_age`. Entrada `256×320×3`, salida sigmoid `[0,1]`. Distribuido vía Git LFS (~95 MB).
+**Modelo:** ResNet50 con fine-tuning en dos fases (base congelada → fine-tuning últimas 30 capas). Entrenado sobre dataset `face_age` con augmentación (flip, rotación, zoom, brillo, contraste) y class weighting. Entrada `256×320×3`, salida sigmoid `[0,1]`. Distribuido vía Git LFS (~95 MB).
 
 ---
 
@@ -260,8 +286,10 @@ En todos los casos publica `evt.pixelation.completed`.
 Sirve los resultados procesados mediante presigned URLs de MinIO (válidas 1 hora).
 
 **Endpoints:**
-- `GET /resultado/{guid}` — solicitud completa: estado, tiempos, imagen original, imagen con marcos, imagen terminada, y lista de caras con su clasificación y bounding box
+- `GET /resultado/{guid}` — solicitud completa: estado, tiempos (en UTC), imagen original, imagen con marcos, imagen terminada, y lista de caras con su clasificación y bounding box
+- `GET /resultado/{guid}/thumbnail` — presigned URL de la imagen original (ligero, para previsualizaciones)
 - `GET /resultado/{guid}/cara/{id_cara}` — cara individual: crop de la cara, `es_menor`, `score` y bounding box
+- `GET /solicitudes?limite=N` — listado de solicitudes con miniaturas, ordenadas por fecha descendente
 - `GET /health` — comprobación de salud
 
 ---

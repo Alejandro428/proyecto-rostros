@@ -26,6 +26,14 @@ db_service      = DatabaseService(DB_CONF)
 storage_service = StorageService(MINIO_CONF, MINIO_PUBLIC_URL, BUCKET_RAW, BUCKET_PROCESSED)
 
 
+@app.get("/solicitudes")
+async def list_solicitudes(limite: int = 100):
+    solicitudes = db_service.get_all_solicitudes(limite)
+    for s in solicitudes:
+        s["url_thumbnail"] = storage_service.presigned_url(BUCKET_RAW, s.pop("url_original"), PRESIGNED_EXPIRY)
+    return {"solicitudes": solicitudes}
+
+
 @app.get("/resultado/{guid}")
 async def get_resultado(guid: str):
     solicitud = db_service.get_solicitud(guid)
@@ -57,6 +65,15 @@ async def get_resultado(guid: str):
         "caras_detectadas": len(caras),
         "caras": caras,
     }
+
+
+@app.get("/resultado/{guid}/thumbnail")
+async def get_thumbnail(guid: str):
+    solicitud = db_service.get_solicitud(guid)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    url = storage_service.presigned_url(BUCKET_RAW, solicitud["url_original"], PRESIGNED_EXPIRY)
+    return {"url": url, "estado": solicitud["estado"]}
 
 
 @app.get("/resultado/{guid}/cara/{id_cara}")

@@ -3,6 +3,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def _ts(dt):
+    return dt.isoformat() + "Z" if dt else None
+
 
 class DatabaseService:
     def __init__(self, db_conf: dict):
@@ -34,15 +37,59 @@ class DatabaseService:
             row = cur.fetchone()
             if not row:
                 return None
-            cols = [
-                "estado", "url_original", "url_terminada", "url_marcos",
+            estado, url_original, url_terminada, url_marcos, *ts = row
+            keys_ts = [
                 "inicio_solicitud", "fin_solicitud",
                 "inicio_deteccion_caras", "fin_deteccion_caras",
                 "inicio_edad", "fin_edad",
                 "inicio_pixelado", "fin_pixelado",
                 "inicio_almacenamiento", "fin_almacenamiento"
             ]
-            return dict(zip(cols, row))
+            result = {
+                "estado": estado,
+                "url_original": url_original,
+                "url_terminada": url_terminada,
+                "url_marcos": url_marcos,
+            }
+            result.update({k: _ts(v) for k, v in zip(keys_ts, ts)})
+            return result
+        finally:
+            cur.close()
+            conn.close()
+
+    def get_all_solicitudes(self, limite: int = 100) -> list:
+        conn = psycopg2.connect(**self.db_conf)
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                SELECT
+                    s.GUID_Solicitud,
+                    s.Estado,
+                    s.Inicio_Solicitud,
+                    s.Fin_Solicitud,
+                    s.URL_Imagen_Original,
+                    COUNT(i.Id_Imagen) AS total_caras,
+                    COUNT(CASE WHEN i.Mayor_18 = FALSE THEN 1 END) AS total_menores
+                FROM Solicitud s
+                LEFT JOIN Imagenes i
+                  ON i.GUID_Solicitud = s.GUID_Solicitud AND i.Imagen_X IS NOT NULL
+                GROUP BY s.GUID_Solicitud, s.Estado, s.Inicio_Solicitud, s.Fin_Solicitud, s.URL_Imagen_Original
+                ORDER BY s.Inicio_Solicitud DESC
+                LIMIT %s
+            """, (limite,))
+            rows = cur.fetchall()
+            return [
+                {
+                    "guid":          r[0],
+                    "estado":        r[1],
+                    "inicio":        _ts(r[2]),
+                    "fin":           _ts(r[3]),
+                    "url_original":  r[4],
+                    "total_caras":   r[5],
+                    "total_menores": r[6],
+                }
+                for r in rows
+            ]
         finally:
             cur.close()
             conn.close()

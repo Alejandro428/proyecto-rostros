@@ -37,6 +37,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+MAGIC_SIGNATURES = [
+    b'\xff\xd8\xff',       # JPEG
+    b'\x89PNG',            # PNG
+    b'BM',                 # BMP
+    b'GIF87a',             # GIF
+    b'GIF89a',             # GIF
+]
+
+def es_imagen_valida(header: bytes) -> bool:
+    return any(header.startswith(sig) for sig in MAGIC_SIGNATURES)
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "api-1"}
@@ -44,17 +56,21 @@ async def health_check():
 @app.post("/upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_image(file: UploadFile = File(...)):
     """Recibe imagen, la almacena en MinIO y publica eventos en Kafka."""
-    
-    # Validar
+
     if not file.filename:
         raise HTTPException(status_code=400, detail="Nombre de archivo requerido")
-    
+
+    if file.size and file.size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail=f"Máximo {MAX_FILE_SIZE // (1024*1024)}MB")
+
+    header = await file.read(8)
+    await file.seek(0)
+    if not es_imagen_valida(header):
+        raise HTTPException(status_code=400, detail="El archivo no es una imagen válida")
+
     ext = file.filename.split('.')[-1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Solo permitido: {', '.join(ALLOWED_EXTENSIONS)}")
-    
-    if file.size and file.size > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail=f"Máximo {MAX_FILE_SIZE // (1024*1024)}MB")
     
     guid_solicitud = str(uuid.uuid4())
     unique_file = str(uuid.uuid4())
