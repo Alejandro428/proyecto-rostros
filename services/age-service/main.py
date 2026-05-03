@@ -94,10 +94,12 @@ while running:
 
         logger.info(f"[AGE] {guid} → {len(processed_faces)} caras procesadas")
 
-        # Kafka primero, luego BD
         producer_service.publish_age_detection_completed(TOPIC_PRODUCE, guid, id_imagen, s3_key, processed_faces)
-        db_service.update_fin_edad(guid)
         consumer_service.commit()
+        try:
+            db_service.update_fin_edad(guid)
+        except Exception as e:
+            logger.warning(f"No se pudo registrar fin_edad (GUID={guid}): {e}")
 
     except Exception as e:
         logger.error(f"[ERROR AGE SERVICE] procesando {guid}: {e}")

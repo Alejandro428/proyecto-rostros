@@ -79,11 +79,14 @@ while running:
         # 3. Publicar evento primero para garantizar consistencia
         producer_service.publish_face_detection_completed(TOPIC_PRODUCE, guid, id_imagen, s3_key, face_list)
 
-        # 4. Métrica BD sólo si Kafka tuvo éxito
-        db_service.update_fin_deteccion_caras(guid)
-
-        # 5. Confirmar offset tras procesamiento completo
+        # 4. Confirmar offset: el flujo ya avanzó
         consumer_service.commit()
+
+        # 5. Métrica BD — fallo no crítico (el flujo ya avanzó)
+        try:
+            db_service.update_fin_deteccion_caras(guid)
+        except Exception as e:
+            logger.warning(f"No se pudo registrar fin_deteccion_caras (GUID={guid}): {e}")
 
     except Exception as e:
         logger.error(f"[ERROR] procesando {guid}: {e}")

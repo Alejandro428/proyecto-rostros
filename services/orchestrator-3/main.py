@@ -47,16 +47,18 @@ while running:
 
         hay_menores = any(f.get("es_menor") for f in faces)
 
-        # Kafka primero, luego BD
         if hay_menores:
             producer_service.publish_cmd_pixelation(TOPIC_PRODUCE_PIX, guid, id_imagen, s3_key, faces)
-            db_service.update_inicio_pixelado(guid)
+            consumer_service.commit()
             logger.info(f"[ORCH-3] {guid} → hay menores → {TOPIC_PRODUCE_PIX}")
+            try:
+                db_service.update_inicio_pixelado(guid)
+            except Exception as e:
+                logger.warning(f"No se pudo registrar inicio_pixelado (GUID={guid}): {e}")
         else:
             producer_service.publish_cmd_storage(TOPIC_PRODUCE_STORAGE, guid, id_imagen, s3_key, faces)
+            consumer_service.commit()
             logger.info(f"[ORCH-3] {guid} → sin menores → {TOPIC_PRODUCE_STORAGE}")
-
-        consumer_service.commit()
 
     except Exception as e:
         logger.error(f"[ERROR ORCH-3] procesando {guid}: {e}")

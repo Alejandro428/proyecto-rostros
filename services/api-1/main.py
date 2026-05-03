@@ -90,11 +90,16 @@ async def upload_image(file: UploadFile = File(...)):
     # 3. Kafka — si falla, revertimos BD (MinIO queda huérfano pero no hay registro)
     try:
         kafka_service.publish_batch(TOPIC_RAW, TOPIC_DETECT, guid_solicitud, id_imagen, s3_key)
-        db_service.update_inicio_deteccion_caras(guid_solicitud)
     except Exception as e:
         logger.error(f"Kafka error, revirtiendo BD (GUID={guid_solicitud}): {e}")
         db_service.delete_request(guid_solicitud)
         raise HTTPException(status_code=500, detail="Error al encolar el procesamiento")
+
+    # 4. Timestamp de inicio de detección — fallo no crítico (Kafka ya publicó)
+    try:
+        db_service.update_inicio_deteccion_caras(guid_solicitud)
+    except Exception as e:
+        logger.warning(f"No se pudo registrar inicio_deteccion_caras (GUID={guid_solicitud}): {e}")
 
     logger.info(f"Upload completado: {guid_solicitud}")
     return {"GUID_Solicitud": guid_solicitud, "Id_Imagen": id_imagen, "status": "CREADA"}

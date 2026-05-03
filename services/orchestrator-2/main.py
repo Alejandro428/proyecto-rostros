@@ -78,17 +78,23 @@ while running:
             except Exception as e:
                 logger.error(f"[ERROR face_id={face.get('face_id')}] {e}")
 
-        # 3. Decidir siguiente paso — Kafka primero, luego BD
+        # 3. Decidir siguiente paso — Kafka primero, luego offset, luego BD
         if faces_payload:
             producer_service.publish_cmd_age_detection(TOPIC_PRODUCE, guid, id_imagen, s3_key_original, faces_payload)
-            db_service.update_inicio_edad(guid)
+            consumer_service.commit()
             logger.info(f"[ORCH-2] {len(faces_payload)} caras → {TOPIC_PRODUCE} — {guid}")
+            try:
+                db_service.update_inicio_edad(guid)
+            except Exception as e:
+                logger.warning(f"No se pudo registrar inicio_edad (GUID={guid}): {e}")
         else:
             producer_service.publish_cmd_storage(TOPIC_PRODUCE_STORAGE, guid, id_imagen, s3_key_original, [])
-            db_service.update_caras_detectadas(guid)
+            consumer_service.commit()
             logger.info(f"[ORCH-2] Sin caras → {TOPIC_PRODUCE_STORAGE} — {guid}")
-
-        consumer_service.commit()
+            try:
+                db_service.update_caras_detectadas(guid)
+            except Exception as e:
+                logger.warning(f"No se pudo registrar caras_detectadas (GUID={guid}): {e}")
 
     except Exception as e:
         logger.error(f"[ERROR ORCH-2] procesando {guid}: {e}")
