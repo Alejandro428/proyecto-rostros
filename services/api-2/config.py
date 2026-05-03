@@ -14,12 +14,12 @@ DB_CONF = {
     "user":     _require("DB_USER"),
     "password": _require("DB_PASSWORD"),
 }
-MINIO_CONF = {
-    "endpoint_url":          os.getenv("MINIO_ENDPOINT", "http://minio:9000"),
-    "aws_access_key_id":     _require("MINIO_USER"),
-    "aws_secret_access_key": _require("MINIO_PASSWORD"),
-}
+
+# api-2 sólo genera presigned URLs: usa el endpoint público directamente.
+MINIO_PUBLIC_ENDPOINT = os.getenv("MINIO_PUBLIC_ENDPOINT", "http://localhost:9000")
+MINIO_ACCESS_KEY      = _require("MINIO_USER")
+MINIO_SECRET_KEY      = _require("MINIO_PASSWORD")
 
 BUCKET_RAW       = "images-raw"
 BUCKET_PROCESSED = "images-processed"
-PRESIGNED_EXPIRY = 3600  # segundos
+PRESIGNED_EXPIRY = 3600

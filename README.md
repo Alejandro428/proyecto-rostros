@@ -75,6 +75,7 @@ Copia el bloque siguiente tal cual en un fichero llamado `.env` en la raíz del 
 KAFKA_SERVER=kafka:9092
 
 MINIO_ENDPOINT=http://minio:9000
+MINIO_PUBLIC_ENDPOINT=http://localhost:9000
 MINIO_USER=minioadmin
 MINIO_PASSWORD=minioadmin
 
@@ -86,6 +87,8 @@ DB_PASSWORD=postgres
 MAX_FILE_SIZE=10485760
 PYTHONUNBUFFERED=1
 ```
+
+`MINIO_ENDPOINT` es la URL interna que usan los servicios dentro de Docker para comunicarse con MinIO. `MINIO_PUBLIC_ENDPOINT` es la URL que verá el navegador al cargar las imágenes — apunta al puerto 9000 expuesto en la máquina host. Si despliegas en un servidor, cambia `http://localhost:9000` por la URL pública del servidor.
 
 Todos los servicios validan al arranque que estas variables estén presentes. Si falta alguna, el contenedor termina inmediatamente con un mensaje de error claro en lugar de fallar con un error críptico de conexión.
 
@@ -369,8 +372,10 @@ En todos los casos publica `evt.pixelation.completed`.
 
 Sirve los resultados procesados mediante presigned URLs de MinIO (válidas 1 hora). Una presigned URL es una URL temporal firmada con las credenciales del servidor que permite al navegador descargar directamente el fichero de MinIO sin necesidad de que el backend actúe de intermediario en la transferencia de datos.
 
+Las presigned URLs se generan usando el endpoint público (`MINIO_PUBLIC_ENDPOINT`, por defecto `http://localhost:9000`), de modo que la firma y el host de la URL ya coinciden con lo que verá el navegador. Las imágenes se cargan directamente desde MinIO, sin pasar por Nginx.
+
 **Endpoints:**
-- `GET /resultado/{guid}` — solicitud completa: estado, tiempos (en UTC), imagen original, imagen con marcos, imagen terminada, y lista de caras con su clasificación y bounding box
+- `GET /resultado/{guid}` — solicitud completa: estado, tiempos de inicio y fin de cada fase (detección, edad, pixelado) en UTC, imagen original, imagen con marcos, imagen terminada, y lista de caras con su clasificación y bounding box
 - `GET /resultado/{guid}/thumbnail` — presigned URL de la imagen original (ligero, para previsualizaciones)
 - `GET /resultado/{guid}/cara/{id_cara}` — cara individual: crop de la cara, `es_menor`, `score` y bounding box
 - `GET /solicitudes?limite=N` — listado de solicitudes con miniaturas, ordenadas por fecha descendente
@@ -617,6 +622,8 @@ El modelo devuelve un score entre 0 y 1 donde 1 = menor. El umbral estándar ser
 ### Presigned URLs en lugar de proxy por el backend
 
 Las imágenes no se sirven pasando por API-2. En cambio, API-2 genera URLs firmadas temporalmente que el navegador usa para descargar directamente de MinIO. Esto evita que el backend sea un cuello de botella en la transferencia de ficheros grandes y reduce el consumo de memoria del servidor.
+
+La clave de implementación es que API-2 firma las URLs usando el endpoint **público** de MinIO (`MINIO_PUBLIC_ENDPOINT`) y no el endpoint interno (`MINIO_ENDPOINT`). AWS SigV4, el algoritmo de firma, incluye el `Host` HTTP dentro del cuerpo firmado. Si se firmara con el host interno (`minio:9000`) pero el navegador accediera por un host diferente, la verificación de la firma fallaría. Al usar el endpoint público desde el inicio, el host firmado coincide exactamente con el host al que llega la petición del navegador.
 
 ---
 

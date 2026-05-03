@@ -122,28 +122,58 @@ export default function Resultado({ datos, guid, onReiniciar }) {
               <span className="tiempo-valor">{fmt(datos.tiempos.fin_solicitud)}</span>
             </div>
             {datos.tiempos.inicio_deteccion_caras && (
-              <div className="tiempo-fila">
-                <span className="tiempo-etiqueta">Detección de caras</span>
-                <span className="tiempo-valor tiempo-duracion">
-                  {duracion(datos.tiempos.inicio_deteccion_caras, datos.tiempos.fin_deteccion_caras)}
-                </span>
-              </div>
+              <>
+                <div className="tiempo-fila">
+                  <span className="tiempo-etiqueta">Inicio detección caras</span>
+                  <span className="tiempo-valor">{fmt(datos.tiempos.inicio_deteccion_caras)}</span>
+                </div>
+                <div className="tiempo-fila">
+                  <span className="tiempo-etiqueta">Fin detección caras</span>
+                  <span className="tiempo-valor">{fmt(datos.tiempos.fin_deteccion_caras)}</span>
+                </div>
+                <div className="tiempo-fila tiempo-duracion-fila">
+                  <span className="tiempo-etiqueta">Detección de caras</span>
+                  <span className="tiempo-valor tiempo-duracion">
+                    {duracion(datos.tiempos.inicio_deteccion_caras, datos.tiempos.fin_deteccion_caras)}
+                  </span>
+                </div>
+              </>
             )}
             {datos.tiempos.inicio_edad && (
-              <div className="tiempo-fila">
-                <span className="tiempo-etiqueta">Análisis de edad</span>
-                <span className="tiempo-valor tiempo-duracion">
-                  {duracion(datos.tiempos.inicio_edad, datos.tiempos.fin_edad)}
-                </span>
-              </div>
+              <>
+                <div className="tiempo-fila">
+                  <span className="tiempo-etiqueta">Inicio análisis edad</span>
+                  <span className="tiempo-valor">{fmt(datos.tiempos.inicio_edad)}</span>
+                </div>
+                <div className="tiempo-fila">
+                  <span className="tiempo-etiqueta">Fin análisis edad</span>
+                  <span className="tiempo-valor">{fmt(datos.tiempos.fin_edad)}</span>
+                </div>
+                <div className="tiempo-fila tiempo-duracion-fila">
+                  <span className="tiempo-etiqueta">Análisis de edad</span>
+                  <span className="tiempo-valor tiempo-duracion">
+                    {duracion(datos.tiempos.inicio_edad, datos.tiempos.fin_edad)}
+                  </span>
+                </div>
+              </>
             )}
             {datos.tiempos.inicio_pixelado && (
-              <div className="tiempo-fila">
-                <span className="tiempo-etiqueta">Pixelado</span>
-                <span className="tiempo-valor tiempo-duracion">
-                  {duracion(datos.tiempos.inicio_pixelado, datos.tiempos.fin_pixelado)}
-                </span>
-              </div>
+              <>
+                <div className="tiempo-fila">
+                  <span className="tiempo-etiqueta">Inicio pixelado</span>
+                  <span className="tiempo-valor">{fmt(datos.tiempos.inicio_pixelado)}</span>
+                </div>
+                <div className="tiempo-fila">
+                  <span className="tiempo-etiqueta">Fin pixelado</span>
+                  <span className="tiempo-valor">{fmt(datos.tiempos.fin_pixelado)}</span>
+                </div>
+                <div className="tiempo-fila tiempo-duracion-fila">
+                  <span className="tiempo-etiqueta">Pixelado</span>
+                  <span className="tiempo-valor tiempo-duracion">
+                    {duracion(datos.tiempos.inicio_pixelado, datos.tiempos.fin_pixelado)}
+                  </span>
+                </div>
+              </>
             )}
             {datos.tiempos.inicio_solicitud && datos.tiempos.fin_solicitud && (
               <div className="tiempo-fila tiempo-total">

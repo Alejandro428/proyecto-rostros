@@ -573,6 +573,11 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.tiempo-duracion-fila {
+  background: #f8fafc;
+  border-bottom: 2px solid #e2e8f0 !important;
+}
+
 .tiempo-total {
   background: #f8fafc;
   border-top: 1px solid #e2e8f0 !important;
@@ -1325,6 +1330,7 @@ html.dark .contenedor-imagen   { background: #0f172a; }
 html.dark .seccion-tiempos         { border-color: #334155; }
 html.dark .seccion-tiempos h3      { background: #283548; border-bottom-color: #334155; }
 html.dark .tiempo-fila             { background: #1e293b; border-bottom-color: #283548; }
+html.dark .tiempo-duracion-fila    { background: #283548; border-bottom-color: #334155 !important; }
 html.dark .tiempo-total            { background: #283548; border-top-color: #334155 !important; }
 html.dark .tiempo-total .tiempo-etiqueta { color: #e2e8f0; }
 
