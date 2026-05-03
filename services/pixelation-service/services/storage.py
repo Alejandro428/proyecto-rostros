@@ -29,7 +29,9 @@ class StorageService:
         return img
 
     def upload_image(self, img: np.ndarray, s3_key: str) -> str:
-        _, buf = cv2.imencode(".jpg", img)
+        success, buf = cv2.imencode(".jpg", img)
+        if not success:
+            raise ValueError(f"No se pudo codificar la imagen: {s3_key}")
         self.client.put_object(
             Bucket=self.bucket_processed,
             Key=s3_key,

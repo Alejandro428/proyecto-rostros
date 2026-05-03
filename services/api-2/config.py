@@ -20,9 +20,6 @@ MINIO_CONF = {
     "aws_secret_access_key": _require("MINIO_PASSWORD"),
 }
 
-# URL pública de MinIO para generar presigned URLs accesibles desde el navegador
-MINIO_PUBLIC_URL = os.getenv("MINIO_PUBLIC_URL", "http://localhost:9000")
-
 BUCKET_RAW       = "images-raw"
 BUCKET_PROCESSED = "images-processed"
 PRESIGNED_EXPIRY = 3600  # segundos

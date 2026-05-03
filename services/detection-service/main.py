@@ -4,7 +4,7 @@ import json
 import logging
 from insightface.app import FaceAnalysis
 
-from config import DB_CONF, MINIO_CONF, KAFKA_CONF_CONSUMER, KAFKA_CONF_PRODUCER, BUCKET_RAW, TOPIC_CONSUME
+from config import DB_CONF, MINIO_CONF, KAFKA_CONF_CONSUMER, KAFKA_CONF_PRODUCER, BUCKET_RAW, TOPIC_CONSUME, TOPIC_PRODUCE
 from services.db import DatabaseService
 from services.storage import StorageService
 from services.kafka_service import KafkaConsumerService, KafkaProducerService
@@ -77,7 +77,7 @@ while running:
         logger.info(f"[DETECTION] {guid} -> {len(face_list)} caras detectadas")
 
         # 3. Publicar evento primero para garantizar consistencia
-        producer_service.publish_face_detection_completed(guid, id_imagen, s3_key, face_list)
+        producer_service.publish_face_detection_completed(TOPIC_PRODUCE, guid, id_imagen, s3_key, face_list)
 
         # 4. Métrica BD sólo si Kafka tuvo éxito
         db_service.update_fin_deteccion_caras(guid)

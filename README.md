@@ -75,7 +75,6 @@ Copia el bloque siguiente tal cual en un fichero llamado `.env` en la raíz del 
 KAFKA_SERVER=kafka:9092
 
 MINIO_ENDPOINT=http://minio:9000
-MINIO_PUBLIC_URL=http://localhost:9000
 MINIO_USER=minioadmin
 MINIO_PASSWORD=minioadmin
 
@@ -553,6 +552,35 @@ Las claves de las imágenes de salida son deterministas (`{guid}/marcos.jpg`, `{
 
 **Validación de variables de entorno al arranque:**
 Todos los servicios comprueban al iniciar que las variables de entorno requeridas están presentes y terminan con un mensaje de error claro si falta alguna. Esto evita que un servicio arranque y falle con un error críptico de conexión en el primer mensaje que intenta procesar.
+
+### Error al descargar imágenes Docker (Cloudflare R2 bloqueado)
+
+**Síntoma:**
+```
+failed to copy: httpReadSeeker: failed open: failed to do request: Get
+"https://docker-images-prod.*.r2.cloudflarestorage.com/...":
+dial tcp 172.64.66.1:443: connectex: A connection attempt failed...
+```
+
+**Causa:** Docker Hub migró su CDN a Cloudflare R2. Algunos ISPs o routers bloquean el IP `172.64.66.1`, impidiendo la descarga de imágenes. El proyecto y su configuración son correctos; el problema es de red en la máquina local.
+
+**Solución:** Configurar un mirror de registro en Docker Desktop.
+
+1. Abre **Docker Desktop → Settings → Docker Engine**
+2. Añade `"registry-mirrors"` al JSON:
+
+```json
+{
+  "registry-mirrors": ["https://mirror.gcr.io"]
+}
+```
+
+3. Haz clic en **Apply & restart**
+4. Verifica con `docker pull hello-world`
+
+El mirror de Google descarga las imágenes desde sus propios servidores, evitando el CDN de Cloudflare R2.
+
+---
 
 ### Limitaciones conocidas
 

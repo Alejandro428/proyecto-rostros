@@ -3,7 +3,7 @@ import cv2
 import json
 import logging
 
-from config import DB_CONF, MINIO_CONF, KAFKA_CONF_CONSUMER, KAFKA_CONF_PRODUCER, BUCKET_RAW, TOPIC_CONSUME
+from config import DB_CONF, MINIO_CONF, KAFKA_CONF_CONSUMER, KAFKA_CONF_PRODUCER, BUCKET_RAW, TOPIC_CONSUME, TOPIC_PRODUCE, TOPIC_PRODUCE_STORAGE
 from services.db import DatabaseService
 from services.storage import StorageService
 from services.kafka_service import KafkaConsumerService, KafkaProducerService
@@ -80,13 +80,13 @@ while running:
 
         # 3. Decidir siguiente paso — Kafka primero, luego BD
         if faces_payload:
-            producer_service.publish_cmd_age_detection(guid, id_imagen, s3_key_original, faces_payload)
+            producer_service.publish_cmd_age_detection(TOPIC_PRODUCE, guid, id_imagen, s3_key_original, faces_payload)
             db_service.update_inicio_edad(guid)
-            logger.info(f"[ORCH-2] {len(faces_payload)} caras → cmd.age_detection — {guid}")
+            logger.info(f"[ORCH-2] {len(faces_payload)} caras → {TOPIC_PRODUCE} — {guid}")
         else:
-            producer_service.publish_cmd_storage(guid, id_imagen, s3_key_original, [])
+            producer_service.publish_cmd_storage(TOPIC_PRODUCE_STORAGE, guid, id_imagen, s3_key_original, [])
             db_service.update_caras_detectadas(guid)
-            logger.info(f"[ORCH-2] Sin caras → cmd.storage — {guid}")
+            logger.info(f"[ORCH-2] Sin caras → {TOPIC_PRODUCE_STORAGE} — {guid}")
 
         consumer_service.commit()
 

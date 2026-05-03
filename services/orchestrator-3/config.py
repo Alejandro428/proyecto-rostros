@@ -24,4 +24,6 @@ DB_CONF = {
     "password": _require("DB_PASSWORD"),
 }
 
-TOPIC_CONSUME = "evt.age_detection.completed"
+TOPIC_CONSUME          = "evt.age_detection.completed"
+TOPIC_PRODUCE_PIX      = "cmd.pixelation"
+TOPIC_PRODUCE_STORAGE  = "cmd.storage"

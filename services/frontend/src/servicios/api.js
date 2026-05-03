@@ -1,5 +1,5 @@
-const URL_API_1 = 'http://localhost:8000'
-const URL_API_2 = 'http://localhost:8001'
+const URL_API_1 = '/api/v1'
+const URL_API_2 = '/api/v2'
 
 export async function subirImagen(archivo) {
   const formulario = new FormData()

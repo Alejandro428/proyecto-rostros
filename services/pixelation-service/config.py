@@ -33,3 +33,4 @@ BUCKET_RAW       = "images-raw"
 BUCKET_PROCESSED = "images-processed"
 
 TOPICS_CONSUME = ["cmd.pixelation", "cmd.storage"]
+TOPIC_PRODUCE  = "evt.pixelation.completed"

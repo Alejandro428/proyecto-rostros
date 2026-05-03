@@ -115,6 +115,8 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - PYTHONUNBUFFERED=${PYTHONUNBUFFERED}
+    volumes:
+      - insightface_models:/root/.insightface/models
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -225,7 +227,6 @@ services:
       - MINIO_ENDPOINT=${MINIO_ENDPOINT}
       - MINIO_USER=${MINIO_USER}
       - MINIO_PASSWORD=${MINIO_PASSWORD}
-      - MINIO_PUBLIC_URL=${MINIO_PUBLIC_URL}
       - PYTHONUNBUFFERED=${PYTHONUNBUFFERED}
     depends_on:
       - db
@@ -257,6 +258,8 @@ services:
         condition: service_started
       api-2:
         condition: service_started
+    networks:
+      - backend
 
 networks:
   backend:
@@ -267,3 +270,4 @@ volumes:
   minio_data:
   frontend_node_modules:
   frontend_dist:
+  insightface_models:

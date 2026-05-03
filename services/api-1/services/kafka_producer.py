@@ -17,8 +17,7 @@ class KafkaProducerService:
         else:
             logger.debug(f"Kafka: mensaje confirmado en {msg.topic()}")
 
-    def publish_batch(self, guid_solicitud: str, id_imagen: int, s3_key: str):
-        """Publica images.raw y cmd.face_detection y espera confirmación."""
+    def publish_batch(self, topic_raw: str, topic_detect: str, guid_solicitud: str, id_imagen: int, s3_key: str):
         event = {
             "version": "1.0",
             "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -27,8 +26,8 @@ class KafkaProducerService:
             "s3_key": s3_key,
         }
         payload = json.dumps(event).encode("utf-8")
-        self.producer.produce("images.raw", value=payload, callback=self._delivery_report)
-        self.producer.produce("cmd.face_detection", value=payload, callback=self._delivery_report)
+        self.producer.produce(topic_raw, value=payload, callback=self._delivery_report)
+        self.producer.produce(topic_detect, value=payload, callback=self._delivery_report)
         pending = self.producer.flush(timeout=KAFKA_FLUSH_TIMEOUT)
         if pending > 0:
             raise RuntimeError(f"Kafka: {pending} mensajes sin confirmar tras {KAFKA_FLUSH_TIMEOUT}s")

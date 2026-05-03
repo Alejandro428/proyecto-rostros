@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import DB_CONF, MINIO_CONF, KAFKA_CONF, BUCKET_RAW, ALLOWED_EXTENSIONS, MAX_FILE_SIZE
+from config import DB_CONF, MINIO_CONF, KAFKA_CONF, BUCKET_RAW, ALLOWED_EXTENSIONS, MAX_FILE_SIZE, TOPIC_RAW, TOPIC_DETECT
 from services.db import DatabaseService
 from services.storage import StorageService
 from services.kafka_producer import KafkaProducerService
@@ -89,7 +89,7 @@ async def upload_image(file: UploadFile = File(...)):
 
     # 3. Kafka — si falla, revertimos BD (MinIO queda huérfano pero no hay registro)
     try:
-        kafka_service.publish_batch(guid_solicitud, id_imagen, s3_key)
+        kafka_service.publish_batch(TOPIC_RAW, TOPIC_DETECT, guid_solicitud, id_imagen, s3_key)
         db_service.update_inicio_deteccion_caras(guid_solicitud)
     except Exception as e:
         logger.error(f"Kafka error, revirtiendo BD (GUID={guid_solicitud}): {e}")

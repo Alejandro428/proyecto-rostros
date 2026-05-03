@@ -11,7 +11,7 @@ def _require(name: str) -> str:
 
 # Database
 DB_CONF: Dict[str, Any] = {
-    "host": os.getenv("DB_HOST", "localhost"),
+    "host": os.getenv("DB_HOST", "db"),
     "port": int(os.getenv("DB_PORT", "5432")),
     "database": os.getenv("DB_NAME", "db_rostros"),
     "user": _require("DB_USER"),
@@ -20,20 +20,22 @@ DB_CONF: Dict[str, Any] = {
 
 # MinIO
 MINIO_CONF = {
-    "endpoint_url": os.getenv("MINIO_ENDPOINT", "http://localhost:9000"),
+    "endpoint_url": os.getenv("MINIO_ENDPOINT", "http://minio:9000"),
     "aws_access_key_id": _require("MINIO_USER"),
     "aws_secret_access_key": _require("MINIO_PASSWORD"),
 }
 
 BUCKET_RAW = "images-raw"
-BUCKET_PROCESSED = "images-processed"
 
 # Kafka
 KAFKA_CONF = {
-    "bootstrap.servers": os.getenv("KAFKA_SERVER", "localhost:9092"),
+    "bootstrap.servers": os.getenv("KAFKA_SERVER", "kafka:9092"),
     "client.id": "api-1-producer",
 }
 
+TOPIC_RAW    = "images.raw"
+TOPIC_DETECT = "cmd.face_detection"
+
 # Upload
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
-MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 50 * 1024 * 1024))  # 50MB default
+MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # 10MB default

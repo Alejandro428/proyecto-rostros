@@ -6,7 +6,7 @@ import numpy as np
 
 from config import (
     DB_CONF, MINIO_CONF, KAFKA_CONF_CONSUMER, KAFKA_CONF_PRODUCER,
-    BUCKET_RAW, BUCKET_PROCESSED, TOPICS_CONSUME
+    BUCKET_RAW, BUCKET_PROCESSED, TOPICS_CONSUME, TOPIC_PRODUCE
 )
 from services.db import DatabaseService
 from services.storage import StorageService
@@ -104,7 +104,7 @@ while running:
 
         if topic == "cmd.storage" and not faces:
             # Sin caras (viene de O2): Kafka primero, luego BD
-            producer_service.publish_pixelation_completed(guid, id_imagen, s3_key, [])
+            producer_service.publish_pixelation_completed(TOPIC_PRODUCE, guid, id_imagen, s3_key, [])
             db_service.update_fin_solicitud_sin_caras(guid)
             logger.info(f"[PIXELATION] {guid} → completado sin caras")
             consumer_service.commit()
@@ -116,7 +116,7 @@ while running:
             img_marcos   = generar_imagen_marcos(img_original, faces)
             key_marcos   = f"{guid}/marcos.jpg"
             storage_service.upload_image(img_marcos, key_marcos)
-            producer_service.publish_pixelation_completed(guid, id_imagen, s3_key, faces)
+            producer_service.publish_pixelation_completed(TOPIC_PRODUCE, guid, id_imagen, s3_key, faces)
             db_service.update_fin_solo_marcos(guid, key_marcos)
             logger.info(f"[PIXELATION] {guid} → completado sin menores — marcos={key_marcos}")
             consumer_service.commit()
@@ -133,7 +133,7 @@ while running:
         storage_service.upload_image(img_terminada, key_terminada)
 
         # Kafka primero, luego BD
-        producer_service.publish_pixelation_completed(guid, id_imagen, s3_key, faces)
+        producer_service.publish_pixelation_completed(TOPIC_PRODUCE, guid, id_imagen, s3_key, faces)
         db_service.update_fin_solicitud(guid, key_terminada, key_marcos)
         logger.info(f"[PIXELATION] {guid} → completado — marcos={key_marcos} terminada={key_terminada}")
         consumer_service.commit()

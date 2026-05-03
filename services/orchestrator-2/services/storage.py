@@ -24,7 +24,9 @@ class StorageService:
 
     def upload_crop(self, crop: np.ndarray, s3_key: str):
         """Codifica crop como JPEG y lo sube a MinIO."""
-        _, buffer = cv2.imencode(".jpg", crop)
+        success, buffer = cv2.imencode(".jpg", crop)
+        if not success:
+            raise ValueError(f"No se pudo codificar el crop: {s3_key}")
         self.s3.put_object(
             Bucket=self.bucket_raw,
             Key=s3_key,

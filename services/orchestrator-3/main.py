@@ -2,7 +2,7 @@ import signal
 import json
 import logging
 
-from config import DB_CONF, KAFKA_CONF_CONSUMER, KAFKA_CONF_PRODUCER, TOPIC_CONSUME
+from config import DB_CONF, KAFKA_CONF_CONSUMER, KAFKA_CONF_PRODUCER, TOPIC_CONSUME, TOPIC_PRODUCE_PIX, TOPIC_PRODUCE_STORAGE
 from services.db import DatabaseService
 from services.kafka_service import KafkaConsumerService, KafkaProducerService
 
@@ -49,12 +49,12 @@ while running:
 
         # Kafka primero, luego BD
         if hay_menores:
-            producer_service.publish_cmd_pixelation(guid, id_imagen, s3_key, faces)
+            producer_service.publish_cmd_pixelation(TOPIC_PRODUCE_PIX, guid, id_imagen, s3_key, faces)
             db_service.update_inicio_pixelado(guid)
-            logger.info(f"[ORCH-3] {guid} → hay menores → cmd.pixelation")
+            logger.info(f"[ORCH-3] {guid} → hay menores → {TOPIC_PRODUCE_PIX}")
         else:
-            producer_service.publish_cmd_storage(guid, id_imagen, s3_key, faces)
-            logger.info(f"[ORCH-3] {guid} → sin menores → cmd.storage")
+            producer_service.publish_cmd_storage(TOPIC_PRODUCE_STORAGE, guid, id_imagen, s3_key, faces)
+            logger.info(f"[ORCH-3] {guid} → sin menores → {TOPIC_PRODUCE_STORAGE}")
 
         consumer_service.commit()
 

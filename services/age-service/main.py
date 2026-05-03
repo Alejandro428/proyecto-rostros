@@ -8,7 +8,7 @@ from tensorflow.keras.applications.resnet50 import preprocess_input
 
 from config import (
     DB_CONF, MINIO_CONF, KAFKA_CONF_CONSUMER, KAFKA_CONF_PRODUCER,
-    BUCKET_RAW, TOPIC_CONSUME, MODEL_PATH, IMG_SIZE_CV2, THRESHOLD
+    BUCKET_RAW, TOPIC_CONSUME, TOPIC_PRODUCE, MODEL_PATH, IMG_SIZE_CV2, THRESHOLD
 )
 from services.db import DatabaseService
 from services.storage import StorageService
@@ -95,7 +95,7 @@ while running:
         logger.info(f"[AGE] {guid} → {len(processed_faces)} caras procesadas")
 
         # Kafka primero, luego BD
-        producer_service.publish_age_detection_completed(guid, id_imagen, s3_key, processed_faces)
+        producer_service.publish_age_detection_completed(TOPIC_PRODUCE, guid, id_imagen, s3_key, processed_faces)
         db_service.update_fin_edad(guid)
         consumer_service.commit()
 

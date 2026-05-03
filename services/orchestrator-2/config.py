@@ -33,6 +33,7 @@ DB_CONF: Dict[str, Any] = {
     "password": _require("DB_PASSWORD"),
 }
 
-BUCKET_RAW     = "images-raw"
-TOPIC_CONSUME  = "evt.face_detection.completed"
-TOPIC_PRODUCE  = "cmd.age_detection"
+BUCKET_RAW             = "images-raw"
+TOPIC_CONSUME          = "evt.face_detection.completed"
+TOPIC_PRODUCE          = "cmd.age_detection"
+TOPIC_PRODUCE_STORAGE  = "cmd.storage"
