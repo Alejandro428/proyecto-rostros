@@ -75,7 +75,6 @@ Copia el bloque siguiente tal cual en un fichero llamado `.env` en la raíz del 
 KAFKA_SERVER=kafka:9092
 
 MINIO_ENDPOINT=http://minio:9000
-MINIO_PUBLIC_ENDPOINT=http://localhost:9000
 MINIO_USER=minioadmin
 MINIO_PASSWORD=minioadmin
 
@@ -88,7 +87,7 @@ MAX_FILE_SIZE=10485760
 PYTHONUNBUFFERED=1
 ```
 
-`MINIO_ENDPOINT` es la URL interna que usan los servicios dentro de Docker para comunicarse con MinIO. `MINIO_PUBLIC_ENDPOINT` es la URL que verá el navegador al cargar las imágenes — apunta al puerto 9000 expuesto en la máquina host. Si despliegas en un servidor, cambia `http://localhost:9000` por la URL pública del servidor.
+`MINIO_ENDPOINT` es la URL interna que usan los servicios dentro de Docker para comunicarse con MinIO. No se necesita ninguna URL pública adicional — las presigned URLs se generan automáticamente usando el host del request entrante (ver sección de decisiones de diseño).
 
 Todos los servicios validan al arranque que estas variables estén presentes. Si falta alguna, el contenedor termina inmediatamente con un mensaje de error claro en lugar de fallar con un error críptico de conexión.
 
@@ -370,9 +369,9 @@ En todos los casos publica `evt.pixelation.completed`.
 
 ### API-2 — Consulta de resultados (puerto 8001)
 
-Sirve los resultados procesados mediante presigned URLs de MinIO (válidas 1 hora). Una presigned URL es una URL temporal firmada con las credenciales del servidor que permite al navegador descargar directamente el fichero de MinIO sin necesidad de que el backend actúe de intermediario en la transferencia de datos.
+Sirve los resultados procesados mediante presigned URLs de MinIO (válidas 1 hora). Una presigned URL es una URL temporal firmada con las credenciales del servidor que permite al navegador descargar directamente el fichero sin necesidad de que el backend actúe de intermediario en la transferencia de datos.
 
-Las presigned URLs se generan usando el endpoint público (`MINIO_PUBLIC_ENDPOINT`, por defecto `http://localhost:9000`), de modo que la firma y el host de la URL ya coinciden con lo que verá el navegador. Las imágenes se cargan directamente desde MinIO, sin pasar por Nginx.
+Las presigned URLs se generan firmando con el endpoint interno (`minio:9000`) y luego reemplazando el host por el host público derivado del request entrante (ver decisiones de diseño). Las imágenes se sirven a través del proxy `/storage/` de Nginx, que reenvía la petición a MinIO manteniendo el host firmado.
 
 **Endpoints:**
 - `GET /resultado/{guid}` — solicitud completa: estado, tiempos de inicio y fin de cada fase (detección, edad, pixelado) en UTC, imagen original, imagen con marcos, imagen terminada, y lista de caras con su clasificación y bounding box
@@ -619,11 +618,18 @@ En todos los servicios que consumen y producen eventos, la publicación en Kafka
 
 El modelo devuelve un score entre 0 y 1 donde 1 = menor. El umbral estándar sería 0.50, pero se usa 0.45 para ser más conservadores: es preferible pixelar algún adulto por error (falso positivo) que dejar sin pixelar a un menor (falso negativo). La diferencia en falsos positivos a este umbral es mínima según las métricas de validación del modelo.
 
-### Presigned URLs en lugar de proxy por el backend
+### Presigned URLs a través del proxy Nginx
 
-Las imágenes no se sirven pasando por API-2. En cambio, API-2 genera URLs firmadas temporalmente que el navegador usa para descargar directamente de MinIO. Esto evita que el backend sea un cuello de botella en la transferencia de ficheros grandes y reduce el consumo de memoria del servidor.
+Las imágenes no se sirven pasando por API-2. En cambio, API-2 genera URLs firmadas temporalmente que el navegador usa para descargar el fichero. El flujo completo es:
 
-La clave de implementación es que API-2 firma las URLs usando el endpoint **público** de MinIO (`MINIO_PUBLIC_ENDPOINT`) y no el endpoint interno (`MINIO_ENDPOINT`). AWS SigV4, el algoritmo de firma, incluye el `Host` HTTP dentro del cuerpo firmado. Si se firmara con el host interno (`minio:9000`) pero el navegador accediera por un host diferente, la verificación de la firma fallaría. Al usar el endpoint público desde el inicio, el host firmado coincide exactamente con el host al que llega la petición del navegador.
+1. API-2 firma la URL usando el endpoint **interno** (`minio:9000`), pero reemplaza ese host por el host del request (`{scheme}://{host}/storage`).
+2. El navegador hace GET a, por ejemplo, `http://localhost:3000/storage/images-raw/guid/foto.jpg?X-Amz-Signature=...`
+3. Nginx recibe la petición en `location /storage/` y la reenvía a `http://minio:9000/`, forzando el header `Host: minio:9000` — el mismo host que se usó al firmar.
+4. MinIO verifica la firma y devuelve el fichero.
+
+La ventaja de este diseño es que **no requiere ninguna variable de configuración adicional**: el host de la URL se deriva automáticamente del header `Host` del request entrante, por lo que el mismo código funciona en local (`localhost:3000`), en una red local (`192.168.1.X:3000`) o en producción (`https://midominio.com`), sin tocar el `.env`.
+
+AWS SigV4 incluye el `Host` dentro del cuerpo firmado, por lo que el host que firma y el host que MinIO ve al validar deben coincidir. Nginx garantiza esa coincidencia estableciendo `proxy_set_header Host minio:9000` en el bloque `/storage/`.
 
 ---
 
