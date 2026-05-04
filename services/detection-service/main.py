@@ -66,8 +66,8 @@ while running:
             x1, y1, x2, y2 = [int(v) for v in face.bbox]
             x  = max(0, x1)
             y  = max(0, y1)
-            bw = min(x2 - x1, w - x)
-            bh = min(y2 - y1, h - y)
+            bw = min(x2, w) - x
+            bh = min(y2, h) - y
             if bw > 0 and bh > 0:
                 face_list.append({
                     "face_id": face_id,

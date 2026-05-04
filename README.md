@@ -622,12 +622,15 @@ El modelo devuelve un score entre 0 y 1 donde 1 = menor. El umbral estándar ser
 
 Las imágenes no se sirven pasando por API-2. En cambio, API-2 genera URLs firmadas temporalmente que el navegador usa para descargar el fichero. El flujo completo es:
 
-1. API-2 firma la URL usando el endpoint **interno** (`minio:9000`), pero reemplaza ese host por el host del request (`{scheme}://{host}/storage`).
-2. El navegador hace GET a, por ejemplo, `http://localhost:3000/storage/images-raw/guid/foto.jpg?X-Amz-Signature=...`
-3. Nginx recibe la petición en `location /storage/` y la reenvía a `http://minio:9000/`, forzando el header `Host: minio:9000` — el mismo host que se usó al firmar.
-4. MinIO verifica la firma y devuelve el fichero.
+1. Nginx reenvía las peticiones a API-2 incluyendo el header `X-Forwarded-Host` con el valor exacto del `Host` del cliente (p.ej. `localhost:3000`), preservando el puerto.
+2. API-2 firma la URL usando el endpoint **interno** (`minio:9000`), pero reemplaza ese host por `{scheme}://{X-Forwarded-Host}/storage`.
+3. El navegador hace GET a, por ejemplo, `http://localhost:3000/storage/images-raw/guid/foto.jpg?X-Amz-Signature=...`
+4. Nginx recibe la petición en `location /storage/` y la reenvía a `http://minio:9000/`, forzando el header `Host: minio:9000` — el mismo host que se usó al firmar.
+5. MinIO verifica la firma y devuelve el fichero.
 
-La ventaja de este diseño es que **no requiere ninguna variable de configuración adicional**: el host de la URL se deriva automáticamente del header `Host` del request entrante, por lo que el mismo código funciona en local (`localhost:3000`), en una red local (`192.168.1.X:3000`) o en producción (`https://midominio.com`), sin tocar el `.env`.
+La ventaja de este diseño es que **no requiere ninguna variable de configuración adicional**: el host de la URL se deriva automáticamente del header `X-Forwarded-Host` del request entrante, por lo que el mismo código funciona en local (`localhost:3000`), en una red local (`192.168.1.X:3000`) o en producción (`https://midominio.com`), sin tocar el `.env`.
+
+> **Nota de implementación:** Nginx usa `$http_host` (no `$host`) para poblar `X-Forwarded-Host`. La diferencia es que `$host` elimina el puerto, lo que provocaría que el navegador construyese URLs apuntando al puerto 80 en lugar del 3000. `$http_host` preserva el valor exacto del header `Host` enviado por el cliente, puerto incluido.
 
 AWS SigV4 incluye el `Host` dentro del cuerpo firmado, por lo que el host que firma y el host que MinIO ve al validar deben coincidir. Nginx garantiza esa coincidencia estableciendo `proxy_set_header Host minio:9000` en el bloque `/storage/`.
 
