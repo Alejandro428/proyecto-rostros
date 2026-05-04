@@ -1,0 +1,11 @@
+# Dependencias para ejecutar los tests
+# Instalar con: pip install -r tests/requirements.txt
+#
+# Nota: los tests de procesamiento de imagen (test_pixelation.py) requieren
+# además las dependencias del servicio pixelation-service:
+#   pip install opencv-python-headless numpy
+
+pytest>=7.4
+httpx>=0.24        # TestClient de FastAPI
+starlette>=0.27    # Request mock en test_api2.py (ya incluida con fastapi)
+boto3>=1.26        # test_api2.py: StorageService real con cliente mockeado
