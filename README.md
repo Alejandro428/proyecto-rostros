@@ -382,7 +382,7 @@ Clasifica si cada cara corresponde a un menor mediante una CNN entrenada.
 - Actualiza el estado a `EDAD_CALCULADA`
 - Publica `evt.age_detection.completed` con `score` y `es_menor` por cara
 
-**Modelo:** ResNet50 con fine-tuning en dos fases (base congelada → fine-tuning últimas 30 capas). Entrenado sobre dataset `face_age` con augmentación (flip, rotación, zoom, brillo, contraste) y class weighting. Entrada `256×320×3`, salida sigmoid `[0,1]`. El umbral de 0.45 (en lugar de 0.50) prioriza no perder ningún menor a costa de algún falso positivo. Distribuido vía Git LFS (~95 MB).
+**Modelo:** ResNet50 con fine-tuning en dos fases (base congelada → fine-tuning últimas 30 capas). Entrenado sobre el dataset [face_age (Kaggle)](https://www.kaggle.com/datasets/frabbisw/facial-age) con augmentación (flip, rotación, zoom, brillo, contraste) y class weighting. Entrada `256×320×3`, salida sigmoid `[0,1]`. El umbral de 0.45 (en lugar de 0.50) prioriza no perder ningún menor a costa de algún falso positivo. Distribuido vía Git LFS (~95 MB).
 
 ---
 
