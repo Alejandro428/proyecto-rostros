@@ -51,10 +51,6 @@ def _mock_client(endpoint_url: str, presigned: str) -> MagicMock:
     return client
 
 
-def _signed(path: str = "", qs: str = "X-Amz-Signature=abc") -> str:
-    return f"{INTERNAL}/{path}?{qs}" if path else f"{INTERNAL}?{qs}"
-
-
 # ── Tests: presigned_url ──────────────────────────────────────────────────────
 
 class TestPresignedUrl:

@@ -9,13 +9,14 @@ Sistema distribuido orientado a eventos para detectar rostros en imágenes, clas
 1. [Requisitos previos](#requisitos-previos)
 2. [Instalación en una máquina nueva](#instalación-en-una-máquina-nueva)
 3. [Cómo ejecutar el sistema](#cómo-ejecutar-el-sistema)
-4. [Estructura del proyecto](#estructura-del-proyecto)
-5. [Descripción de cada servicio](#descripción-de-cada-servicio)
-6. [Topics y flujo de eventos](#topics-y-flujo-de-eventos)
-7. [Documentación funcional](#documentación-funcional)
-8. [Gestión de errores](#gestión-de-errores)
-9. [Decisiones de diseño](#decisiones-de-diseño)
-10. [Solución de problemas frecuentes](#solución-de-problemas-frecuentes)
+4. [Tests unitarios](#tests-unitarios)
+5. [Estructura del proyecto](#estructura-del-proyecto)
+6. [Descripción de cada servicio](#descripción-de-cada-servicio)
+7. [Topics y flujo de eventos](#topics-y-flujo-de-eventos)
+8. [Documentación funcional](#documentación-funcional)
+9. [Gestión de errores](#gestión-de-errores)
+10. [Decisiones de diseño](#decisiones-de-diseño)
+11. [Solución de problemas frecuentes](#solución-de-problemas-frecuentes)
 
 ---
 
@@ -214,6 +215,59 @@ bash scripts/train.sh
 ```
 
 El script entrena el modelo, lo copia a `age-service` y reinicia el contenedor automáticamente.
+
+---
+
+## Tests unitarios
+
+La suite cubre la lógica de negocio crítica de cada servicio sin necesitar infraestructura real (Kafka, PostgreSQL, MinIO ni modelos ML). Los tests son completamente autónomos: replican la lógica que testean en lugar de importar los módulos de servicio, evitando así dependencias de arranque como conexiones a base de datos o carga de modelos.
+
+### Instalación de dependencias
+
+```bash
+pip install -r tests/requirements.txt
+```
+
+Los tests de procesamiento de imagen (`test_pixelation.py`) requieren además:
+
+```bash
+pip install opencv-python-headless numpy
+```
+
+Si `opencv-python-headless` no está instalado, ese fichero se salta automáticamente sin fallar el resto de la suite.
+
+### Ejecutar los tests
+
+Todos los tests:
+```bash
+pytest tests/ -v
+```
+
+Un fichero concreto:
+```bash
+pytest tests/test_api1.py -v
+```
+
+Una clase concreta:
+```bash
+pytest tests/test_pixelation.py::TestGenerarImagenTerminada -v
+```
+
+### Qué verifica cada fichero
+
+| Fichero | Servicio | Qué comprueba | Tests |
+|---|---|---|---|
+| `test_api1.py` | api-1 | **Magic bytes**: identifica JPEG/PNG por contenido real, no por extensión — detecta GIF, WebP, PDF y texto como inválidos. **Extensión**: normaliza mayúsculas, rechaza formatos no permitidos. **Tamaño**: límite exacto de 10 MB, límite incluido y límite + 1 byte. | 26 |
+| `test_api2.py` | api-2 | **Presigned URL**: `key=None` o `key=""` devuelve `None`; el endpoint interno `minio:9000` es sustituido por la URL pública; la firma SigV4 (query string completo) se preserva intacta; excepciones boto3 devuelven `None`. **Host público**: `X-Forwarded-Host` tiene prioridad sobre `Host`; el puerto se preserva (`$http_host` vs `$host`); esquema https con `X-Forwarded-Proto`; fallback a `localhost:3000`. | 15 |
+| `test_age.py` | age-service | **Umbral 0.45**: exactamente en el umbral es MENOR, un dígito por debajo es ADULTO. El umbral conservador clasifica 0.46 como menor (con 0.50 sería adulto). **Relación `es_menor`/`Mayor_18`**: son siempre opuestos para todos los valores de score posibles. | 15 |
+| `test_orchestrators.py` | orchestrator-2 y orchestrator-3 | **Orch-2**: con caras → `cmd.age_detection`; sin caras → `cmd.storage`. **Orch-3**: con algún menor → `cmd.pixelation`; todos adultos o sin caras → `cmd.storage`; campo `es_menor` ausente se trata como adulto. | 10 |
+| `test_pixelation.py` | pixelation-service | **`generar_imagen_terminada`**: la región de un menor queda pixelada (valor de píxeles cambia); la región de un adulto queda intacta; con lista vacía la imagen es idéntica; la imagen original no se modifica (se trabaja sobre copia); en una imagen mixta solo se pixela el menor; `roi.size=0` no lanza excepción. **`generar_imagen_marcos`**: las dimensiones son idénticas al original; lista vacía produce una copia exacta; la imagen original no se modifica. | 14 |
+
+### Resultado esperado
+
+```
+84 passed in ~0.4s
+```
 
 ---
 
