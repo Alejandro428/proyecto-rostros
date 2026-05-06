@@ -8,16 +8,17 @@ Sistema distribuido orientado a eventos para detectar rostros en imágenes, clas
 
 1. [Requisitos previos](#requisitos-previos)
 2. [Instalación en una máquina nueva](#instalación-en-una-máquina-nueva)
-3. [Cómo ejecutar el sistema](#cómo-ejecutar-el-sistema)
+3. [Uso](#uso)
 4. [Tests unitarios](#tests-unitarios)
 5. [Estructura del proyecto](#estructura-del-proyecto)
-6. [Descripción de cada servicio](#descripción-de-cada-servicio)
-7. [Topics y flujo de eventos](#topics-y-flujo-de-eventos)
-8. [Documentación funcional](#documentación-funcional)
-9. [Gestión de errores](#gestión-de-errores)
-10. [Decisiones de diseño](#decisiones-de-diseño)
-11. [Entrenamiento del modelo de clasificación de edad](#entrenamiento-del-modelo-de-clasificación-de-edad)
-12. [Solución de problemas frecuentes](#solución-de-problemas-frecuentes)
+6. [Almacenamiento con MinIO](#almacenamiento-con-minio)
+7. [Descripción de cada servicio](#descripción-de-cada-servicio)
+8. [Topics y flujo de eventos](#topics-y-flujo-de-eventos)
+9. [Documentación funcional](#documentación-funcional)
+10. [Gestión de errores](#gestión-de-errores)
+11. [Decisiones de diseño](#decisiones-de-diseño)
+12. [Entrenamiento del modelo de clasificación de edad](#entrenamiento-del-modelo-de-clasificación-de-edad)
+13. [Solución de problemas frecuentes](#solución-de-problemas-frecuentes)
 
 ---
 
@@ -136,40 +137,11 @@ Abre [http://localhost:3000](http://localhost:3000) — si ves la interfaz, el s
 
 ---
 
-## Cómo ejecutar el sistema
-
-### 1. Clonar el repositorio
-
-El modelo de clasificación de edad (~95 MB) está gestionado con Git LFS y se descarga automáticamente al clonar:
-
-```bash
-git clone https://github.com/Alejandro428/proyecto-rostros.git
-cd proyecto-rostros
-```
-
-> Si ya tienes el repositorio clonado sin LFS: `git lfs pull`
-
-### 2. Levantar todos los servicios
-
-```bash
-docker compose up -d --build
-```
-
-### 3. Verificar que todos los contenedores están en marcha
-
-```bash
-docker compose ps
-```
-
-Todos los servicios deben estar en estado `running`. El contenedor `kafka-init` aparecerá como `exited (0)` — es correcto, su trabajo es crear los topics al arrancar y terminar.
-
-### 4. Probar el sistema
+## Uso
 
 **Interfaz web:** abre [http://localhost:3000](http://localhost:3000) en el navegador.
 
-También puedes usar la API directamente:
-
-**Formatos de imagen compatibles:** `JPEG`, `PNG` — tamaño máximo **10 MB**
+También puedes usar la API directamente. Formatos aceptados: `JPEG`, `PNG` — máximo **10 MB**.
 
 **Subir una imagen:**
 ```bash
@@ -182,7 +154,7 @@ La respuesta incluye el `GUID_Solicitud`:
 {"GUID_Solicitud": "abc-123", "Id_Imagen": 1, "status": "CREADA"}
 ```
 
-**Consultar el resultado completo** (esperar unos segundos):
+**Consultar el resultado** (esperar unos segundos):
 ```bash
 curl http://localhost:8001/resultado/abc-123
 ```
@@ -192,13 +164,12 @@ curl http://localhost:8001/resultado/abc-123
 curl http://localhost:8001/resultado/abc-123/cara/2
 ```
 
-**Listar todas las solicitudes:**
+**Listar solicitudes:**
 ```bash
 curl http://localhost:8001/solicitudes?limite=20
 ```
 
-### 5. Detener el sistema
-
+**Detener el sistema:**
 ```bash
 docker compose down
 ```
@@ -208,9 +179,7 @@ Para eliminar también los volúmenes (BD, MinIO, Kafka):
 docker compose down -v
 ```
 
-### 6. Entrenamiento del modelo (opcional)
-
-Si quieres re-entrenar la red neuronal con tu GPU local:
+**Re-entrenar el modelo (opcional):**
 ```bash
 bash scripts/train.sh
 ```
@@ -301,6 +270,66 @@ proyecto_rostros/
     ├── api-2/                # Consulta de resultados
     └── frontend/             # Interfaz web (React + Vite, servida por Nginx)
 ```
+
+---
+
+## Almacenamiento con MinIO
+
+MinIO es un servidor de almacenamiento de objetos compatible con la API de Amazon S3. En este proyecto actúa como sistema de ficheros compartido entre todos los servicios — ningún servicio guarda imágenes en disco local; todo sube y baja de MinIO.
+
+### Interfaces de acceso
+
+| Interfaz | URL | Uso |
+|---|---|---|
+| API S3 (programática) | `http://minio:9000` (interno Docker) | Los servicios Python usan la librería `boto3` contra este endpoint |
+| Consola web de administración | [http://localhost:9001](http://localhost:9001) | Permite explorar buckets y objetos visualmente. Credenciales: `minioadmin` / `minioadmin` |
+
+### Buckets
+
+El sistema usa dos buckets que se crean automáticamente al arrancar los servicios:
+
+| Bucket | Contenido |
+|---|---|
+| `images-raw` | Imagen original subida por el usuario + crops de caras individuales |
+| `images-processed` | Imágenes de salida generadas por el pipeline (marcos y pixelada) |
+
+### Estructura de claves (rutas de objetos)
+
+Todos los objetos de una misma solicitud comparten el prefijo `{guid}`, donde `{guid}` es el UUID único de esa solicitud:
+
+| Objeto | Bucket | Clave | Lo sube |
+|---|---|---|---|
+| Imagen original | `images-raw` | `{guid}/{uuid}.{ext}` | API-1 al recibir el upload |
+| Crop de cada cara | `images-raw` | `{guid}/faces/{id_cara}.jpg` | Orchestrator-2 tras la detección |
+| Imagen con marcos | `images-processed` | `{guid}/marcos.jpg` | Pixelation Service |
+| Imagen terminada (menores pixelados) | `images-processed` | `{guid}/terminada.jpg` | Pixelation Service (solo si hay menores) |
+
+Las claves son deterministas: si un servicio falla y el mensaje se reprocesa, las subidas sobreescriben los objetos anteriores sin efectos secundarios.
+
+### Qué servicio interactúa con MinIO y cómo
+
+```
+API-1          → crea bucket images-raw si no existe
+               → sube imagen original            → images-raw/{guid}/{uuid}.jpg
+
+Detection      → descarga imagen original        ← images-raw
+
+Orchestrator-2 → descarga imagen original        ← images-raw
+               → sube crop por cada cara         → images-raw/{guid}/faces/{id}.jpg
+
+Age Service    → descarga crop de cada cara      ← images-raw
+
+Pixelation     → crea bucket images-processed si no existe
+               → descarga imagen original        ← images-raw
+               → sube marcos.jpg                 → images-processed/{guid}/marcos.jpg
+               → sube terminada.jpg              → images-processed/{guid}/terminada.jpg
+
+API-2          → genera presigned URLs           ← ambos buckets (lectura)
+```
+
+### Cómo se sirven las imágenes al navegador
+
+El navegador nunca contacta directamente con MinIO (que no está expuesto públicamente). API-2 genera **presigned URLs**: URLs temporales firmadas con las credenciales del servidor, válidas durante 1 hora, que incluyen la firma SigV4 en la query string. Estas URLs apuntan a la ruta `/storage/` de Nginx, que las reenvía internamente a MinIO. El mecanismo completo se describe en [Presigned URLs a través del proxy Nginx](#presigned-urls-a-través-del-proxy-nginx).
 
 ---
 
@@ -447,9 +476,7 @@ En todos los casos publica `evt.pixelation.completed`.
 
 ### API-2 — Consulta de resultados (puerto 8001)
 
-Sirve los resultados procesados mediante presigned URLs de MinIO (válidas 1 hora). Una presigned URL es una URL temporal firmada con las credenciales del servidor que permite al navegador descargar directamente el fichero sin necesidad de que el backend actúe de intermediario en la transferencia de datos.
-
-Las presigned URLs se generan firmando con el endpoint interno (`minio:9000`) y luego reemplazando el host por el host público derivado del request entrante (ver decisiones de diseño). Las imágenes se sirven a través del proxy `/storage/` de Nginx, que reenvía la petición a MinIO manteniendo el host firmado.
+Sirve los resultados procesados mediante presigned URLs de MinIO, válidas 1 hora (ver [Presigned URLs a través del proxy Nginx](#presigned-urls-a-través-del-proxy-nginx) y [Almacenamiento con MinIO](#almacenamiento-con-minio)).
 
 **Endpoints:**
 - `GET /resultado/{guid}` — solicitud completa: estado, tiempos de inicio y fin de cada fase (detección, edad, pixelado) en UTC, imagen original, imagen con marcos, imagen terminada, y lista de caras con su clasificación y bounding box
@@ -548,54 +575,7 @@ CREADA → CARAS_DETECTADAS → EDAD_CALCULADA → COMPLETADA
 | `COMPLETADA` | Pixelation Service | Imágenes de salida generadas, flujo cerrado |
 | `ERROR` | Cualquier consumer | Fallo irrecuperable durante el procesamiento |
 
-### Flujo de eventos completo
-
-**Caso 1 — Imagen con menores detectados:**
-```
-POST /upload
-  API-1        → MinIO(images-raw) + BD(CREADA) + cmd.face_detection
-  Detection    → detecta N caras + evt.face_detection.completed + BD(fin_deteccion)
-  Orch-2       → N crops a MinIO + BD(Imagenes) + BD(CARAS_DETECTADAS) + cmd.age_detection
-  Age Service  → clasifica N caras + BD(Mayor_18, Escore) + BD(EDAD_CALCULADA) + evt.age_detection.completed
-  Orch-3       → hay menores → BD(Inicio_Pixelado) + cmd.pixelation
-  Pixelation   → marcos.jpg + terminada.jpg a MinIO + BD(COMPLETADA) + evt.pixelation.completed
-GET /resultado/{guid} → presigned URLs + scores por cara
-```
-
-**Caso 2 — Imagen sin caras:**
-```
-  Orch-2 → 0 caras → BD(CARAS_DETECTADAS) + cmd.storage (faces=[])
-  Pixelation → BD(COMPLETADA) sin imágenes adicionales
-```
-
-**Caso 3 — Caras detectadas pero ningún menor:**
-```
-  Orch-3 → 0 menores → cmd.storage (faces=[adultos])
-  Pixelation → marcos.jpg a MinIO (adultos en verde) + BD(COMPLETADA)
-```
-
-### Estructura de mensajes Kafka
-
-Los contratos completos en formato JSON Schema están en el directorio `/contracts/`.
-
-**Ejemplo: `evt.age_detection.completed`**
-```json
-{
-  "version": "1.0",
-  "timestamp": "2025-01-01T12:00:00Z",
-  "GUID_Solicitud": "uuid-v4",
-  "Id_Imagen": 1,
-  "s3_key": "guid/uuid.jpg",
-  "faces": [
-    {
-      "face_id": 2,
-      "bbox": {"x": 100, "y": 50, "w": 80, "h": 90},
-      "es_menor": true,
-      "score": 0.8734
-    }
-  ]
-}
-```
+Los contratos completos de cada mensaje en formato JSON Schema están en el directorio `/contracts/`.
 
 ---
 
@@ -631,9 +611,6 @@ En Age Service y Orchestrator-2, los errores en el procesamiento de una cara ind
 
 **Idempotencia en MinIO:**
 Las claves de las imágenes de salida son deterministas (`{guid}/marcos.jpg`, `{guid}/terminada.jpg`, `{guid}/faces/{id}.jpg`). Si se reprocesa una solicitud, las imágenes se sobreescriben sin efectos secundarios.
-
-**Validación de variables de entorno al arranque:**
-Todos los servicios comprueban al iniciar que las variables de entorno requeridas están presentes y terminan con un mensaje de error claro si falta alguna. Esto evita que un servicio arranque y falle con un error críptico de conexión en el primer mensaje que intenta procesar.
 
 ### Error al descargar imágenes Docker (Cloudflare R2 bloqueado)
 
@@ -707,10 +684,6 @@ Las imágenes no se sirven pasando por API-2. En cambio, API-2 genera URLs firma
 5. MinIO verifica la firma y devuelve el fichero.
 
 La ventaja de este diseño es que **no requiere ninguna variable de configuración adicional**: el host de la URL se deriva automáticamente del header `X-Forwarded-Host` del request entrante, por lo que el mismo código funciona en local (`localhost:3000`), en una red local (`192.168.1.X:3000`) o en producción (`https://midominio.com`), sin tocar el `.env`.
-
-> **Nota de implementación:** Nginx usa `$http_host` (no `$host`) para poblar `X-Forwarded-Host`. La diferencia es que `$host` elimina el puerto, lo que provocaría que el navegador construyese URLs apuntando al puerto 80 en lugar del 3000. `$http_host` preserva el valor exacto del header `Host` enviado por el cliente, puerto incluido.
-
-AWS SigV4 incluye el `Host` dentro del cuerpo firmado, por lo que el host que firma y el host que MinIO ve al validar deben coincidir. Nginx garantiza esa coincidencia estableciendo `proxy_set_header Host minio:9000` en el bloque `/storage/`.
 
 ---
 
@@ -833,11 +806,3 @@ Normal. Al arrancar por primera vez descarga el modelo `buffalo_l` de insightfac
    ```
 3. Si algún contenedor está en `restarting`, aplica el punto anterior.
 
-### Quiero empezar de cero (borrar todos los datos)
-
-```bash
-docker compose down -v
-docker compose up -d --build
-```
-
-`-v` elimina los volúmenes de PostgreSQL, MinIO y Kafka. El siguiente arranque parte de una base de datos vacía.
