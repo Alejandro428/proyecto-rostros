@@ -403,7 +403,7 @@ Solo se entrena la cabeza densa (`GAP → Dense(64) → Dropout → Dense(32) �
 
 Los callbacks están separados por responsabilidad:
 - `EarlyStopping(val_loss, patience=5)` — para el entrenamiento cuando la pérdida de validación empieza a subir, señal temprana de sobreajuste.
-- `ModelCheckpoint(val_recall_menor)` — guarda el checkpoint con mayor recall sobre menores, no el de menor pérdida.
+- `ModelCheckpoint(val_loss)` — guarda el checkpoint con menor pérdida de validación, la señal más fiable de generalización. El recall se evalúa después sobre ese modelo.
 - `ReduceLROnPlateau(val_loss)` — reduce el LR si la pérdida se estanca.
 
 El recall es la métrica de referencia porque el coste de un falso negativo (menor no detectado) es mucho mayor que el de un falso positivo. El umbral de 0.45 (en lugar de 0.50) refuerza esta prioridad.

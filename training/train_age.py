@@ -148,8 +148,9 @@ model.summary()
 # =========================
 # 5. CALLBACKS
 # =========================
-# EarlyStopping monitoriza val_loss para detectar sobreajuste temprano.
-# ModelCheckpoint guarda el epoch con mayor recall sobre menores.
+# EarlyStopping y ModelCheckpoint monitorizan val_loss: guardar el epoch
+# con menor pérdida de validación es la señal más fiable de generalización.
+# El recall se evalúa después sobre el modelo guardado, no guía el checkpoint.
 # ReduceLROnPlateau reduce el LR si la pérdida se estanca.
 
 def get_callbacks(path):
@@ -163,8 +164,8 @@ def get_callbacks(path):
         ),
         ModelCheckpoint(
             filepath=path,
-            monitor="val_recall_menor",
-            mode="max",
+            monitor="val_loss",
+            mode="min",
             save_best_only=True,
             verbose=1
         ),
