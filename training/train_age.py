@@ -15,8 +15,7 @@ from sklearn.utils.class_weight import compute_class_weight
 
 IMG_SIZE   = (256, 320)
 BATCH_SIZE = 32
-EPOCHS_F1  = 20        # fase 1: base congelada
-EPOCHS_FT  = 15        # fase 2: fine-tuning
+EPOCHS_F1  = 20        # épocas de entrenamiento
 LR         = 0.001
 SEED       = 123
 THRESHOLD  = 0.45      # score >= THRESHOLD → MENOR
@@ -149,48 +148,23 @@ model.summary()
 # =========================
 # 5. CALLBACKS
 # =========================
-# Todos los callbacks monitorizan val_loss.
-# EarlyStopping y ModelCheckpoint apuntan al mismo punto: mejor generalización antes del sobreajuste.
-# El recall se evalúa al final sobre el modelo guardado, no guía el checkpoint.
+# EarlyStopping monitoriza val_loss para detectar sobreajuste temprano.
+# ModelCheckpoint guarda el epoch con mayor recall sobre menores.
+# ReduceLROnPlateau reduce el LR si la pérdida se estanca.
 
-def get_callbacks_fase1(path):
+def get_callbacks(path):
     return [
         EarlyStopping(
             monitor="val_loss",
             mode="min",
-            patience=4,
+            patience=5,
             restore_best_weights=True,
             verbose=1
         ),
         ModelCheckpoint(
             filepath=path,
-            monitor="val_loss",
-            mode="min",
-            save_best_only=True,
-            verbose=1
-        ),
-        ReduceLROnPlateau(
-            monitor="val_loss",
-            factor=0.5,
-            patience=3,
-            min_lr=1e-7,
-            verbose=1
-        )
-    ]
-
-def get_callbacks_fase2(path):
-    return [
-        EarlyStopping(
-            monitor="val_loss",
-            mode="min",
-            patience=2,
-            restore_best_weights=True,
-            verbose=1
-        ),
-        ModelCheckpoint(
-            filepath=path,
-            monitor="val_loss",
-            mode="min",
+            monitor="val_recall_menor",
+            mode="max",
             save_best_only=True,
             verbose=1
         ),
@@ -204,7 +178,7 @@ def get_callbacks_fase2(path):
     ]
 
 # =========================
-# 6. FASE 1 — base congelada
+# 6. ENTRENAMIENTO — base congelada
 # =========================
 
 recall_menor = tf.keras.metrics.Recall(thresholds=THRESHOLD, name="recall_menor")
@@ -215,55 +189,25 @@ model.compile(
     metrics=["accuracy", recall_menor]
 )
 
-path_fase1 = OUTPUT_PATH.replace(".h5", "_fase1.h5")
-print("===== FASE 1 — ResNet50 base congelada =====\n")
+print("===== ResNet50 base congelada =====\n")
 model.fit(
     train_ds,
     validation_data=val_ds,
     epochs=EPOCHS_F1,
-    callbacks=get_callbacks_fase1(path_fase1),
+    callbacks=get_callbacks(OUTPUT_PATH),
     class_weight=class_weight,
 )
 
 # =========================
-# 7. FASE 2 — fine-tuning
+# 7. EVALUACIÓN FINAL
 # =========================
 
-base = model.get_layer("resnet50")
-base.trainable = True
-
-fine_tune_from = len(base.layers) - 30
-for layer in base.layers[:fine_tune_from]:
-    layer.trainable = False
-
-print(f"\nCapas entrenables en ResNet50: {sum(1 for l in base.layers if l.trainable)} de {len(base.layers)}")
-
-model.compile(
-    optimizer=tf.keras.optimizers.Adam(LR / 10),
-    loss="binary_crossentropy",
-    metrics=["accuracy", tf.keras.metrics.Recall(thresholds=THRESHOLD, name="recall_menor")]
-)
-
-print("===== FASE 2 — Fine-tuning últimas 30 capas =====\n")
-model.fit(
-    train_ds,
-    validation_data=val_ds,
-    epochs=EPOCHS_FT,
-    callbacks=get_callbacks_fase2(OUTPUT_PATH),
-    class_weight=class_weight,
-)
-
-# =========================
-# 8. EVALUACIÓN FINAL
-# =========================
-
-loss, accuracy, recall = model.evaluate(val_ds)
+best_model = tf.keras.models.load_model(OUTPUT_PATH)
+loss, accuracy, recall = best_model.evaluate(val_ds)
 print(f"\nLoss:         {loss:.4f}")
 print(f"Accuracy:     {accuracy:.4f}")
 print(f"Recall MENOR: {recall:.4f}")
 
-best_model = tf.keras.models.load_model(OUTPUT_PATH)
 best_model.save(OUTPUT_PATH, include_optimizer=False)
 print(f"\nModelo guardado en: {OUTPUT_PATH} (sin optimizador, ~100 MB)")
-print(f"Fase 1 guardada en: {path_fase1}")
 print(f"Clases: {class_names}  →  score >= {THRESHOLD} = MENOR (label 1)")

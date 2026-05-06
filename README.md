@@ -383,29 +383,26 @@ Clasifica si cada cara corresponde a un menor mediante una CNN entrenada.
 - Actualiza el estado a `EDAD_CALCULADA`
 - Publica `evt.age_detection.completed` con `score` y `es_menor` por cara
 
-**Modelo: ResNet50 con transfer learning, augmentación y fine-tuning**
+**Modelo: ResNet50 con transfer learning y augmentación**
 
-El modelo final es una ResNet50 pre-entrenada en ImageNet, ajustada en dos fases sobre el dataset [face_age (Kaggle)](https://www.kaggle.com/datasets/frabbisw/facial-age). Entrada `256×320×3`, salida sigmoid `[0,1]`. Distribuido vía Git LFS (~95 MB).
+El modelo final es una ResNet50 pre-entrenada en ImageNet, ajustada sobre el dataset [face_age (Kaggle)](https://www.kaggle.com/datasets/frabbisw/facial-age). Entrada `256×320×3`, salida sigmoid `[0,1]`. Distribuido vía Git LFS (~95 MB).
 
 **Por qué transfer learning (ResNet50)**
 
-Se evaluó primero una CNN entrenada desde cero. Aunque alcanzó ~84 % de recall (FN ≈ 124 menores no detectados), el aprendizaje era lento y limitado por el tamaño del dataset. ResNet50 ya tiene en sus capas convolucionales patrones de bajo y alto nivel (bordes, texturas, formas faciales) aprendidos sobre millones de imágenes — exactamente lo que necesita la clasificación de edad. Reutilizar esos pesos reduce drásticamente el número de parámetros a entrenar, acelera la convergencia y permite obtener resultados de mayor calidad con el mismo dataset. El modelo resultante alcanza ~93.5 % de recall (FN ≈ 51), reduciendo a menos de la mitad los menores no detectados respecto a la CNN base.
+Se evaluó primero una CNN entrenada desde cero. Aunque alcanzó ~84 % de recall (FN ≈ 124 menores no detectados), el aprendizaje era lento y limitado por el tamaño del dataset. ResNet50 ya tiene en sus capas convolucionales patrones de bajo y alto nivel (bordes, texturas, formas faciales) aprendidos sobre millones de imágenes — exactamente lo que necesita la clasificación de edad. Reutilizar esos pesos reduce drásticamente el número de parámetros a entrenar, acelera la convergencia y permite obtener resultados de mayor calidad con el mismo dataset. El modelo resultante alcanza 0.95 de recall (FN = 42), reduciendo a menos de la mitad los menores no detectados respecto a la CNN base.
 
 **Por qué augmentación de datos**
 
 El dataset tiene desbalance de clases y variabilidad limitada en condiciones de captura (iluminación, ángulos). Aplicar flip horizontal, rotación (±15 %), zoom (±15 %), variación de brillo y contraste en cada batch de entrenamiento genera variantes sintéticas que hacen el modelo más robusto frente a imágenes tomadas en condiciones reales. El class weighting complementa esto compensando el desbalance entre clases durante la optimización.
 
-**Por qué fine-tuning en dos fases**
+**Entrenamiento — base congelada (20 épocas, LR = 0.001)**
 
-Descongelar toda la red desde el principio con un learning rate alto destruye los pesos de ImageNet. El entrenamiento se divide en dos fases para evitarlo:
-
-1. **Fase 1 — base congelada (20 épocas, LR = 0.001):** Solo se entrena la cabeza densa (`GAP → Dense(64) → Dropout → Dense(32) → sigmoid`). La base ResNet50 permanece congelada. Esto permite que la cabeza converja a una representación útil sin perturbar los pesos pre-entrenados.
-2. **Fase 2 — fine-tuning (hasta 15 épocas, LR = 0.0001):** Se descongelan las últimas 30 de las 175 capas de ResNet50. El learning rate 10× menor minimiza el riesgo de destruir el conocimiento previo. Esta fase refina los patrones de alto nivel (geometría facial, textura de piel) para el dominio específico.
+Solo se entrena la cabeza densa (`GAP → Dense(64) → Dropout → Dense(32) → sigmoid`). La base ResNet50 permanece congelada, preservando los pesos de ImageNet. El fine-tuning se evaluó pero se descartó por fragilidad en el entrenamiento y mejora marginal — ver sección [Entrenamiento del modelo](#entrenamiento-del-modelo-de-clasificación-de-edad).
 
 **Control del sobreajuste**
 
-En cada fase, los callbacks están separados por responsabilidad:
-- `EarlyStopping(val_loss, patience=5/4)` — para el entrenamiento cuando la pérdida de validación empieza a subir, señal temprana de sobreajuste.
+Los callbacks están separados por responsabilidad:
+- `EarlyStopping(val_loss, patience=5)` — para el entrenamiento cuando la pérdida de validación empieza a subir, señal temprana de sobreajuste.
 - `ModelCheckpoint(val_recall_menor)` — guarda el checkpoint con mayor recall sobre menores, no el de menor pérdida.
 - `ReduceLROnPlateau(val_loss)` — reduce el LR si la pérdida se estanca.
 
@@ -719,7 +716,7 @@ AWS SigV4 incluye el `Host` dentro del cuerpo firmado, por lo que el host que fi
 
 ## Entrenamiento del modelo de clasificación de edad
 
-Aquí se recorre el camino que llevó a elegir ResNet50 con fine-tuning como arquitectura final, con las gráficas de cada experimento para que se pueda ver en qué punto del proceso cada decisión tenía sentido.
+Aquí se recorre el camino que llevó a elegir ResNet50 sin fine-tuning como arquitectura final, con las gráficas de cada experimento para que se pueda ver en qué punto del proceso cada decisión tenía sentido.
 
 ### Experimento 1 — CNN entrenada desde cero
 
