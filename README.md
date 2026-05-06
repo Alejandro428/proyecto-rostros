@@ -16,7 +16,8 @@ Sistema distribuido orientado a eventos para detectar rostros en imágenes, clas
 8. [Documentación funcional](#documentación-funcional)
 9. [Gestión de errores](#gestión-de-errores)
 10. [Decisiones de diseño](#decisiones-de-diseño)
-11. [Solución de problemas frecuentes](#solución-de-problemas-frecuentes)
+11. [Entrenamiento del modelo de clasificación de edad](#entrenamiento-del-modelo-de-clasificación-de-edad)
+12. [Solución de problemas frecuentes](#solución-de-problemas-frecuentes)
 
 ---
 
@@ -382,7 +383,33 @@ Clasifica si cada cara corresponde a un menor mediante una CNN entrenada.
 - Actualiza el estado a `EDAD_CALCULADA`
 - Publica `evt.age_detection.completed` con `score` y `es_menor` por cara
 
-**Modelo:** ResNet50 con fine-tuning en dos fases (base congelada → fine-tuning últimas 30 capas). Entrenado sobre el dataset [face_age (Kaggle)](https://www.kaggle.com/datasets/frabbisw/facial-age) con augmentación (flip, rotación, zoom, brillo, contraste) y class weighting. Entrada `256×320×3`, salida sigmoid `[0,1]`. El umbral de 0.45 (en lugar de 0.50) prioriza no perder ningún menor a costa de algún falso positivo. Distribuido vía Git LFS (~95 MB).
+**Modelo: ResNet50 con transfer learning, augmentación y fine-tuning**
+
+El modelo final es una ResNet50 pre-entrenada en ImageNet, ajustada en dos fases sobre el dataset [face_age (Kaggle)](https://www.kaggle.com/datasets/frabbisw/facial-age). Entrada `256×320×3`, salida sigmoid `[0,1]`. Distribuido vía Git LFS (~95 MB).
+
+**Por qué transfer learning (ResNet50)**
+
+Se evaluó primero una CNN entrenada desde cero. Aunque alcanzó ~84 % de recall (FN ≈ 124 menores no detectados), el aprendizaje era lento y limitado por el tamaño del dataset. ResNet50 ya tiene en sus capas convolucionales patrones de bajo y alto nivel (bordes, texturas, formas faciales) aprendidos sobre millones de imágenes — exactamente lo que necesita la clasificación de edad. Reutilizar esos pesos reduce drásticamente el número de parámetros a entrenar, acelera la convergencia y permite obtener resultados de mayor calidad con el mismo dataset. El modelo resultante alcanza ~93.5 % de recall (FN ≈ 51), reduciendo a menos de la mitad los menores no detectados respecto a la CNN base.
+
+**Por qué augmentación de datos**
+
+El dataset tiene desbalance de clases y variabilidad limitada en condiciones de captura (iluminación, ángulos). Aplicar flip horizontal, rotación (±15 %), zoom (±15 %), variación de brillo y contraste en cada batch de entrenamiento genera variantes sintéticas que hacen el modelo más robusto frente a imágenes tomadas en condiciones reales. El class weighting complementa esto compensando el desbalance entre clases durante la optimización.
+
+**Por qué fine-tuning en dos fases**
+
+Descongelar toda la red desde el principio con un learning rate alto destruye los pesos de ImageNet. El entrenamiento se divide en dos fases para evitarlo:
+
+1. **Fase 1 — base congelada (20 épocas, LR = 0.001):** Solo se entrena la cabeza densa (`GAP → Dense(64) → Dropout → Dense(32) → sigmoid`). La base ResNet50 permanece congelada. Esto permite que la cabeza converja a una representación útil sin perturbar los pesos pre-entrenados.
+2. **Fase 2 — fine-tuning (hasta 15 épocas, LR = 0.0001):** Se descongelan las últimas 30 de las 175 capas de ResNet50. El learning rate 10× menor minimiza el riesgo de destruir el conocimiento previo. Esta fase refina los patrones de alto nivel (geometría facial, textura de piel) para el dominio específico.
+
+**Control del sobreajuste**
+
+En cada fase, los callbacks están separados por responsabilidad:
+- `EarlyStopping(val_loss, patience=5/4)` — para el entrenamiento cuando la pérdida de validación empieza a subir, señal temprana de sobreajuste.
+- `ModelCheckpoint(val_recall_menor)` — guarda el checkpoint con mayor recall sobre menores, no el de menor pérdida.
+- `ReduceLROnPlateau(val_loss)` — reduce el LR si la pérdida se estanca.
+
+El recall es la métrica de referencia porque el coste de un falso negativo (menor no detectado) es mucho mayor que el de un falso positivo. El umbral de 0.45 (en lugar de 0.50) refuerza esta prioridad.
 
 ---
 
@@ -687,6 +714,78 @@ La ventaja de este diseño es que **no requiere ninguna variable de configuraci�
 > **Nota de implementación:** Nginx usa `$http_host` (no `$host`) para poblar `X-Forwarded-Host`. La diferencia es que `$host` elimina el puerto, lo que provocaría que el navegador construyese URLs apuntando al puerto 80 en lugar del 3000. `$http_host` preserva el valor exacto del header `Host` enviado por el cliente, puerto incluido.
 
 AWS SigV4 incluye el `Host` dentro del cuerpo firmado, por lo que el host que firma y el host que MinIO ve al validar deben coincidir. Nginx garantiza esa coincidencia estableciendo `proxy_set_header Host minio:9000` en el bloque `/storage/`.
+
+---
+
+## Entrenamiento del modelo de clasificación de edad
+
+Aquí se recorre el camino que llevó a elegir ResNet50 con fine-tuning como arquitectura final, con las gráficas de cada experimento para que se pueda ver en qué punto del proceso cada decisión tenía sentido.
+
+### Experimento 1 — CNN entrenada desde cero
+
+El punto de partida fue una CNN propia de tres bloques convolucionales entrenada directamente sobre el dataset [face_age (Kaggle)](https://www.kaggle.com/datasets/frabbisw/facial-age), sin ningún conocimiento previo. El entrenamiento arrancó de forma bastante inestable y la pérdida de validación estuvo oscilando durante buena parte de las 20 épocas.
+
+![CNN sin aumento de datos](imagenes_red_neuronal/cnn_normal.png)
+
+El problema de fondo es que una CNN desde cero tiene que aprender todo: desde detectar bordes hasta entender geometría facial. Con el tamaño de dataset que teníamos, eso es mucho pedir, y los resultados lo reflejan (accuracy val 0.86, pérdida todavía alta al final).
+
+### Experimento 2 — CNN con aumento de datos
+
+El siguiente paso fue añadir aumento de datos: flip horizontal, rotación y zoom en cada batch. Esto generó variantes sintéticas que hicieron el entrenamiento más estable y bajaron la pérdida final (val 0.29 frente a 0.34).
+
+![CNN con aumento de datos](imagenes_red_neuronal/cnn_aumento_de_datos.png)
+
+La mejora es real, pero el techo de la arquitectura queda a la vista. Por muchas variantes que generemos, si la red no tiene una base sólida de la que partir, sus representaciones faciales van a seguir siendo limitadas.
+
+### Por qué ResNet50 — Fase 1 (base congelada)
+
+ResNet50 lleva pre-entrenada en ImageNet, lo que significa que sus capas ya saben reconocer bordes, texturas y formas en general. En la Fase 1 se congela toda esa base y solo se entrena la cabeza de clasificación que se añade encima (`GAP → Dense(64) → Dropout → Dense(32) → sigmoid`). El razonamiento es sencillo: dejar que la cabeza aprenda a usar lo que ResNet ya sabe antes de tocar nada más.
+
+![ResNet50 Fase 1](imagenes_red_neuronal/rednes50.png)
+
+El cambio es inmediato. Desde la primera época el modelo arranca en accuracy val 0.91 y cierra las 20 épocas en val 0.93 con pérdida val 0.17. Lo más llamativo es que las curvas de train y val van prácticamente pegadas durante todo el entrenamiento: no hay sobreajuste, el modelo generaliza bien y tiene margen para seguir mejorando.
+
+### Por qué quedarse con la época 2 del fine-tuning
+
+Una vez que la cabeza está bien ajustada, el fine-tuning desbloquea las últimas 30 de las 175 capas de ResNet50 con un learning rate 10× menor (0.0001). La idea es afinar las capas más profundas para que se adapten a caras de personas en lugar de quedarse en las representaciones genéricas de ImageNet, pero haciéndolo despacio para no destruir lo que ya funciona.
+
+![ResNet50 Fine-tuning](imagenes_red_neuronal/rednes50_fine_tuning.png)
+
+La gráfica de pérdida cuenta exactamente lo que pasó:
+
+- **Época 1:** train 0.21 / val 0.19 — el modelo parte del estado que dejó la Fase 1.
+- **Época 2:** train 0.16 / val 0.16 — ambas pérdidas en su punto más bajo y prácticamente iguales. Aquí el fine-tuning ha hecho su trabajo sin pasarse.
+- **Época 3 en adelante:** la pérdida de entrenamiento sigue cayendo (0.13, 0.11…) pero la de validación empieza a subir (0.19…). Es la señal clásica de sobreajuste: el modelo empieza a memorizar los datos de entrenamiento y pierde capacidad de generalizar a imágenes nuevas.
+
+La época 6 tiene train accuracy 0.97 pero val 0.95 y la pérdida de validación sigue por encima de la de época 2. Entrenar más no ayuda, solo empeora las cosas. Por eso se guardó el modelo de la época 2.
+
+### Resultado final y por qué nos importa el recall
+
+Las métricas, la matriz de confusión y la distribución de scores que se muestran a continuación corresponden al modelo de ResNet50 con la base congelada (Fase 1, sin fine-tuning), que es el que se usa en producción.
+
+Con umbral 0.45:
+
+![Matriz de confusión y curva ROC](imagenes_red_neuronal/matriz_confusion_y_rog_auc_rednes50.png)
+
+- **Recall sobre menores: 0.95** — solo 42 de 785 menores no son detectados (FN).
+- **Precisión sobre menores: 0.92** — 63 adultos son marcados incorrectamente (FP).
+- **ROC-AUC: 0.987** — el modelo separa las clases con mucha claridad en todo el rango de umbrales.
+
+![Distribución de scores por clase](imagenes_red_neuronal/dato_adulto_menor_rednes50.png)
+
+La mayoría de adultos puntúa cerca de 0 y la mayoría de menores cerca de 1, con muy pocos casos en la zona ambigua del umbral. Los errores que comete el modelo corresponden en su mayoría a personas en la franja de los 17-18 años, donde la distinción es genuinamente difícil.
+
+**¿Por qué no usar el fine-tuning si es algo mejor?**
+
+El fine-tuning mejora ligeramente el recall (alrededor de medio punto porcentual), pero tiene un coste que no compensa ese margen. Como se ve en la gráfica de entrenamiento, el modelo empieza a sobreajustarse desde la tercera época: la pérdida de entrenamiento sigue bajando mientras la de validación sube, y la ventana en la que el modelo está en su punto óptimo es muy estrecha. Para capturar ese momento hay que parar el entrenamiento en la época exacta mediante lógica personalizada, lo que hace el proceso de entrenamiento más frágil y menos reproducible. Si en un re-entrenamiento futuro ese punto óptimo cae en una época diferente, el resultado puede ser peor que el de la Fase 1.
+
+La Fase 1, en cambio, entrena de forma estable durante 20 épocas con las curvas de train y val prácticamente pegadas, y ya alcanza un recall de 0.95 y un ROC-AUC de 0.987. Añadir fine-tuning para ganar medio punto de recall a cambio de fragilidad en el entrenamiento no es una buena apuesta, especialmente cuando los resultados ya son sólidos.
+
+**Por qué el recall es la métrica que más importa aquí**
+
+En este sistema la prevalencia de menores en las imágenes del mundo real es desconocida y variable, lo que hace que métricas como la accuracy sean poco fiables para evaluar el rendimiento real: si en una imagen hay pocas caras de menores, un modelo que simplemente clasifique todo como adulto tendría una accuracy alta pero sería completamente inútil. Por eso se utilizan métricas independientes de la prevalencia como el recall, la precisión y el ROC-AUC, que miden el comportamiento del modelo por clase sin verse afectadas por cuántos casos de cada tipo haya en el conjunto de datos.
+
+Entre todas ellas, el recall sobre menores es la que más peso tiene en las decisiones de diseño. El objetivo del sistema es que ningún menor quede sin pixelar, lo que convierte cada falso negativo (un menor que el modelo no detecta) en el error más costoso posible. Un falso positivo —pixelar a un adulto— es un error menor y asumible. Por eso el umbral de decisión se fijó en 0.45 en lugar del 0.50 estándar, inclinando deliberadamente la balanza hacia detectar más menores aunque eso suponga pixelar algún adulto de más.
 
 ---
 

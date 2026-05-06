@@ -149,20 +149,48 @@ model.summary()
 # =========================
 # 5. CALLBACKS
 # =========================
+# Todos los callbacks monitorizan val_loss.
+# EarlyStopping y ModelCheckpoint apuntan al mismo punto: mejor generalización antes del sobreajuste.
+# El recall se evalúa al final sobre el modelo guardado, no guía el checkpoint.
 
-def get_callbacks(path):
+def get_callbacks_fase1(path):
     return [
         EarlyStopping(
-            monitor="val_recall_menor",
-            mode="max",
-            patience=5,
+            monitor="val_loss",
+            mode="min",
+            patience=4,
             restore_best_weights=True,
             verbose=1
         ),
         ModelCheckpoint(
             filepath=path,
-            monitor="val_recall_menor",
-            mode="max",
+            monitor="val_loss",
+            mode="min",
+            save_best_only=True,
+            verbose=1
+        ),
+        ReduceLROnPlateau(
+            monitor="val_loss",
+            factor=0.5,
+            patience=3,
+            min_lr=1e-7,
+            verbose=1
+        )
+    ]
+
+def get_callbacks_fase2(path):
+    return [
+        EarlyStopping(
+            monitor="val_loss",
+            mode="min",
+            patience=2,
+            restore_best_weights=True,
+            verbose=1
+        ),
+        ModelCheckpoint(
+            filepath=path,
+            monitor="val_loss",
+            mode="min",
             save_best_only=True,
             verbose=1
         ),
@@ -193,7 +221,7 @@ model.fit(
     train_ds,
     validation_data=val_ds,
     epochs=EPOCHS_F1,
-    callbacks=get_callbacks(path_fase1),
+    callbacks=get_callbacks_fase1(path_fase1),
     class_weight=class_weight,
 )
 
@@ -221,7 +249,7 @@ model.fit(
     train_ds,
     validation_data=val_ds,
     epochs=EPOCHS_FT,
-    callbacks=get_callbacks(OUTPUT_PATH),
+    callbacks=get_callbacks_fase2(OUTPUT_PATH),
     class_weight=class_weight,
 )
 
