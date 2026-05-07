@@ -735,11 +735,10 @@ Las métricas, la matriz de confusión y la distribución de scores que se muest
 
 Con umbral 0.45:
 
-![Matriz de confusión y curva ROC](imagenes_red_neuronal/matriz_confusion_y_rog_auc_rednes50.png)
+![Matriz de confusión](matriz_confusion_resnet50.png)
 
 - **Recall sobre menores: 0.95** — solo 42 de 785 menores no son detectados (FN).
 - **Precisión sobre menores: 0.92** — 63 adultos son marcados incorrectamente (FP).
-- **ROC-AUC: 0.987** — el modelo separa las clases con mucha claridad en todo el rango de umbrales.
 
 ![Distribución de scores por clase](imagenes_red_neuronal/dato_adulto_menor_rednes50.png)
 
