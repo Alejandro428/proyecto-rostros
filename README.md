@@ -735,7 +735,7 @@ Las métricas, la matriz de confusión y la distribución de scores que se muest
 
 Con umbral 0.45:
 
-![Matriz de confusión](matriz_confusion_resnet50.png)
+![Matriz de confusión](imagenes_red_neuronal/matriz_confusion_resnet50.png)
 
 - **Recall sobre menores: 0.95** — solo 42 de 785 menores no son detectados (FN).
 - **Precisión sobre menores: 0.92** — 63 adultos son marcados incorrectamente (FP).
