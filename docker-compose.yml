@@ -50,8 +50,8 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minioadmin}
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
@@ -63,9 +63,9 @@ services:
     container_name: postgres
     restart: always
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-db_rostros}
     ports:
       - "5432:5432"
     volumes:
@@ -82,16 +82,16 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - KAFKA_SERVER=${KAFKA_SERVER}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
-      - MINIO_USER=${MINIO_USER}
-      - MINIO_PASSWORD=${MINIO_PASSWORD}
-      - DB_HOST=${DB_HOST}
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - MAX_FILE_SIZE=${MAX_FILE_SIZE}
-      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED}
+      - KAFKA_SERVER=${KAFKA_SERVER:-kafka:9092}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
+      - MINIO_USER=${MINIO_USER:-minioadmin}
+      - MINIO_PASSWORD=${MINIO_PASSWORD:-minioadmin}
+      - DB_HOST=${DB_HOST:-db}
+      - DB_NAME=${DB_NAME:-db_rostros}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-10485760}
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -106,15 +106,15 @@ services:
     build: ./services/detection-service
     container_name: detection-service
     environment:
-      - KAFKA_SERVER=${KAFKA_SERVER}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
-      - MINIO_USER=${MINIO_USER}
-      - MINIO_PASSWORD=${MINIO_PASSWORD}
-      - DB_HOST=${DB_HOST}
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED}
+      - KAFKA_SERVER=${KAFKA_SERVER:-kafka:9092}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
+      - MINIO_USER=${MINIO_USER:-minioadmin}
+      - MINIO_PASSWORD=${MINIO_PASSWORD:-minioadmin}
+      - DB_HOST=${DB_HOST:-db}
+      - DB_NAME=${DB_NAME:-db_rostros}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
     volumes:
       - insightface_models:/root/.insightface/models
     depends_on:
@@ -131,15 +131,15 @@ services:
     build: ./services/age-service
     container_name: age-detection
     environment:
-      - KAFKA_SERVER=${KAFKA_SERVER}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
-      - MINIO_USER=${MINIO_USER}
-      - MINIO_PASSWORD=${MINIO_PASSWORD}
-      - DB_HOST=${DB_HOST}
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED}
+      - KAFKA_SERVER=${KAFKA_SERVER:-kafka:9092}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
+      - MINIO_USER=${MINIO_USER:-minioadmin}
+      - MINIO_PASSWORD=${MINIO_PASSWORD:-minioadmin}
+      - DB_HOST=${DB_HOST:-db}
+      - DB_NAME=${DB_NAME:-db_rostros}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -154,15 +154,15 @@ services:
     build: ./services/orchestrator-2
     container_name: orchestrator-2
     environment:
-      - KAFKA_SERVER=${KAFKA_SERVER}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
-      - MINIO_USER=${MINIO_USER}
-      - MINIO_PASSWORD=${MINIO_PASSWORD}
-      - DB_HOST=${DB_HOST}
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED}
+      - KAFKA_SERVER=${KAFKA_SERVER:-kafka:9092}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
+      - MINIO_USER=${MINIO_USER:-minioadmin}
+      - MINIO_PASSWORD=${MINIO_PASSWORD:-minioadmin}
+      - DB_HOST=${DB_HOST:-db}
+      - DB_NAME=${DB_NAME:-db_rostros}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -177,12 +177,12 @@ services:
     build: ./services/orchestrator-3
     container_name: orchestrator-3
     environment:
-      - KAFKA_SERVER=${KAFKA_SERVER}
-      - DB_HOST=${DB_HOST}
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED}
+      - KAFKA_SERVER=${KAFKA_SERVER:-kafka:9092}
+      - DB_HOST=${DB_HOST:-db}
+      - DB_NAME=${DB_NAME:-db_rostros}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -195,15 +195,15 @@ services:
     build: ./services/pixelation-service
     container_name: pixelation
     environment:
-      - KAFKA_SERVER=${KAFKA_SERVER}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
-      - MINIO_USER=${MINIO_USER}
-      - MINIO_PASSWORD=${MINIO_PASSWORD}
-      - DB_HOST=${DB_HOST}
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED}
+      - KAFKA_SERVER=${KAFKA_SERVER:-kafka:9092}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
+      - MINIO_USER=${MINIO_USER:-minioadmin}
+      - MINIO_PASSWORD=${MINIO_PASSWORD:-minioadmin}
+      - DB_HOST=${DB_HOST:-db}
+      - DB_NAME=${DB_NAME:-db_rostros}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -220,14 +220,14 @@ services:
     ports:
       - "8001:8001"
     environment:
-      - DB_HOST=${DB_HOST}
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
-      - MINIO_USER=${MINIO_USER}
-      - MINIO_PASSWORD=${MINIO_PASSWORD}
-      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED}
+      - DB_HOST=${DB_HOST:-db}
+      - DB_NAME=${DB_NAME:-db_rostros}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
+      - MINIO_USER=${MINIO_USER:-minioadmin}
+      - MINIO_PASSWORD=${MINIO_PASSWORD:-minioadmin}
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
     depends_on:
       - db
       - minio

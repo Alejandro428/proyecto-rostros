@@ -2,6 +2,16 @@
 
 Sistema distribuido orientado a eventos para detectar rostros en imágenes, clasificar si corresponden a menores de edad mediante una red neuronal convolucional, y pixelar automáticamente las caras de menores.
 
+## Capturas del sistema
+
+| | |
+|---|---|
+| ![Frontend](docs/screenshots/01_frontend_home.png) | **Frontend** — drag & drop de imágenes, contadores en tiempo real (imágenes procesadas, caras detectadas, menores) y miniaturas del historial reciente. |
+| ![Detección](docs/screenshots/04_deteccion_con_marcos.jpg) | **Detección** — el modelo dibuja marcos sobre las caras detectadas. Rojo = clasificado como menor, verde = mayor. En este caso identifica correctamente al adulto y a las tres niñas. |
+| ![Pixelado](docs/screenshots/05_pixelado_final.jpg) | **Resultado final** — solo las caras de los menores quedan pixeladas; la cara del adulto permanece intacta. |
+| ![API Ingesta](docs/screenshots/02_api1_ingesta_swagger.png) | **API-1 (ingesta)** — endpoint público de subida de imágenes. |
+| ![API Consulta](docs/screenshots/03_api2_consulta_swagger.png) | **API-2 (consulta)** — endpoints de listado de solicitudes y consulta de resultados por GUID. |
+
 ---
 
 ## Índice
